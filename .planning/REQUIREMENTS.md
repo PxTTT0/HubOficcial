@@ -10,6 +10,8 @@
 - [ ] **AUTH-01**: Usuario pode autenticar com perfil operacional ou administrativo
 - [ ] **AUTH-02**: Sistema aplica permissoes por perfil para separar uso operacional de administracao
 - [ ] **AUTH-03**: Sistema registra trilha minima de auditoria para alteracoes em parametros logisticos e tabela de precos
+- [ ] **AUTH-04**: Sistema encerra ou renova sessao de forma segura, com controles adequados para ambiente mobile web
+- [ ] **AUTH-05**: Sistema aplica principio do menor privilegio por perfil e por modulo
 
 ### Proposta Rapida
 
@@ -48,6 +50,24 @@
 - [ ] **MKSC-02**: Sistema calcula ou consolida resultado preliminar de score para apoiar decisao comercial
 - [ ] **MKSC-03**: Sistema apresenta resultado em formato operacional claro, como aprovado, reprovado ou exige analise
 - [ ] **MKSC-04**: Arquitetura do Mak Score suporta evolucao de regras internas e conectores externos sem acoplamento ao fluxo de proposta
+- [ ] **MKSC-05**: Sistema registra auditoria minima para consultas sensiveis e decisoes relevantes do Mak Score
+
+### Security and Resilience
+
+- [ ] **SECU-01**: Sistema protege CPF, CNPJ, telefone e e-mail em repouso, em transito e na exibicao operacional conforme necessidade de acesso
+- [ ] **SECU-02**: Sistema mascara ou sanitiza logs para evitar exposicao de dados sensiveis e credenciais
+- [ ] **SECU-03**: Sistema trata segredos e credenciais fora do codigo e com rotacao controlada por ambiente
+- [ ] **SECU-04**: Sistema aplica rate limit e protecao contra abuso nos modulos sensiveis e nas APIs expostas
+- [ ] **SECU-05**: Sistema valida entradas no client-side para UX e no server-side como garantia de integridade
+- [ ] **SECU-06**: Sistema falha de forma segura quando APIs externas do Mak Score ou outras dependencias nao responderem
+- [ ] **SECU-07**: Sistema aplica defesa em profundidade entre frontend, backend, banco e integracoes
+- [ ] **SECU-08**: Sistema aplica permissoes por modulo de forma explicita e auditavel
+
+### Functional Specification
+
+- [ ] **SPEC-01**: Cada modulo obrigatorio da v1 possui objetivo, publico, campos, acoes, validacoes e regras de negocio documentados
+- [ ] **SPEC-02**: Cada modulo obrigatorio da v1 possui dependencias, erros provaveis e estados operacionais documentados
+- [ ] **SPEC-03**: Cada modulo obrigatorio da v1 possui criterios de aceite claros antes do planejamento detalhado
 
 ### Qualidade e Confiabilidade
 
@@ -88,6 +108,8 @@
 | AUTH-01 | Phase 1 | Pending |
 | AUTH-02 | Phase 1 | Pending |
 | AUTH-03 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Pending |
+| AUTH-05 | Phase 1 | Pending |
 | PROP-01 | Phase 2 | Pending |
 | PROP-02 | Phase 2 | Pending |
 | PROP-03 | Phase 4 | Pending |
@@ -111,13 +133,25 @@
 | MKSC-02 | Phase 5 | Pending |
 | MKSC-03 | Phase 5 | Pending |
 | MKSC-04 | Phase 5 | Pending |
+| MKSC-05 | Phase 5 | Pending |
+| SECU-01 | Phase 1 | Pending |
+| SECU-02 | Phase 1 | Pending |
+| SECU-03 | Phase 1 | Pending |
+| SECU-04 | Phase 1 | Pending |
+| SECU-05 | Phase 1 | Pending |
+| SECU-06 | Phase 5 | Pending |
+| SECU-07 | Phase 1 | Pending |
+| SECU-08 | Phase 1 | Pending |
+| SPEC-01 | Phase 1 | Pending |
+| SPEC-02 | Phase 1 | Pending |
+| SPEC-03 | Phase 1 | Pending |
 | QUAL-01 | Phase 4 | Pending |
 | QUAL-02 | Phase 4 | Pending |
 | QUAL-03 | Phase 4 | Pending |
 
 **Coverage:**
-- v1 requirements: 29 total
-- Mapped to phases: 29
+- v1 requirements: 43 total
+- Mapped to phases: 43
 - Unmapped: 0
 
 ---

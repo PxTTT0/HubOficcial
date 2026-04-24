@@ -13,6 +13,7 @@ See: .planning/PROJECT.md (updated 2026-04-24)
 ## Current Position
 
 - Project initialized with v1 scope, requirements and roadmap
+- Security addendum and functional tabs spec added as mandatory planning artifacts before execution planning
 - Git repository initialized
 - No execution plan created yet
 - No validated requirements yet
@@ -38,3 +39,4 @@ See: .planning/PROJECT.md (updated 2026-04-24)
 - V1 must prioritize reliable freight and rental calculation over breadth of scope
 - Full Sisloc and RD CRM integrations remain outside v1
 - Mak Score is in scope for v1 as a real decision-support module
+- Phase 1 now also locks cross-cutting security controls and per-module functional behavior

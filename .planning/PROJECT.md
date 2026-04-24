@@ -24,6 +24,8 @@ O sistema deve produzir calculos confiaveis de frete e locacao, reduzindo a depe
 - [ ] PDF simples e comercialmente apresentavel pode ser gerado na proposta
 - [ ] Mak Score apoia decisao comercial com resultado preliminar automatico
 - [ ] Parametros sensiveis ficam protegidos por perfis administrativos
+- [ ] Seguranca da v1 e especificada de forma objetiva e aplicada como requisito transversal
+- [ ] Cada modulo obrigatorio da v1 possui especificacao funcional clara antes do planejamento de execucao
 
 ### Out of Scope
 
@@ -42,11 +44,13 @@ O sistema deve produzir calculos confiaveis de frete e locacao, reduzindo a depe
 - O Mak Score entra na v1 como score automatico de apoio a decisao comercial a partir de CPF/CNPJ, combinando fontes externas e regras internas conforme viabilidade tecnica.
 - Confiabilidade na v1 significa aderencia minima de 95% aos cenarios homologados, com cobertura obrigatoria de cenarios criticos e rastreabilidade dos resultados.
 - Gestores nao sao foco operacional da v1, mas podem existir como perfis administrativos ou de acompanhamento para governanca.
+- A base de planejamento da v1 inclui dois complementos obrigatorios antes da Fase 1: um addendum de seguranca e uma especificacao funcional por abas.
 
 ## Constraints
 
 - **Architecture**: Separacao clara entre frontend, backend e banco de dados — produto deve nascer organizado para evolucao modular e integracoes futuras.
 - **Security**: Seguranca em profundidade — parametros logisticos, tabela de precos e dados sensiveis devem ser protegidos por RBAC, trilha de auditoria e isolamento de responsabilidades.
+- **Security Scope**: Autenticacao, sessao, RBAC, permissoes por modulo, logs, segredos, rate limiting, validacoes e falhas externas devem ser tratados explicitamente na v1 — nao podem ficar como decisoes implicitas para fases futuras.
 - **Scope**: V1 enxuta e pragmatica — priorizar fluxo principal de proposta rapida e confiabilidade de calculo, evitando excesso de escopo.
 - **Connectivity**: Uso online em navegador mobile — experiencia deve considerar campo e conexao instavel, mas sem offline completo.
 - **Data Source**: Frete e controlado no proprio sistema; locacao depende de tabela derivada do Sisloc — v1 precisa importar dados minimos necessarios para operar corretamente.
@@ -61,6 +65,8 @@ O sistema deve produzir calculos confiaveis de frete e locacao, reduzindo a depe
 | Separar calculo de frete como modulo reutilizavel | Vendedor interno tambem precisa usar esse calculo no dia a dia | — Pending |
 | Incluir Mak Score na v1 | Score automatico gera utilidade comercial concreta ja na primeira entrega | — Pending |
 | Restringir alteracao de parametros e tabela a perfis administrativos | Evita risco operacional e protege consistencia dos calculos | — Pending |
+| Formalizar um security addendum da v1 antes da Fase 1 | Seguranca e requisito de produto, nao detalhe de implementacao tardio | — Pending |
+| Formalizar uma especificacao funcional por modulo antes da Fase 1 | Evita ambiguidade no planejamento e reduz retrabalho nas fases seguintes | — Pending |
 
 ## Evolution
 
