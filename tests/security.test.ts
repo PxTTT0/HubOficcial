@@ -62,6 +62,7 @@ test("login cria sessao assinada e rotas protegidas exigem autenticacao real", {
     AUTH_ALLOW_DEV_HEADER_AUTH: "false",
     AUTH_SECURE_COOKIES: "false",
     AUTH_TRUSTED_ORIGINS: "http://localhost:5173",
+    AUTH_MFA_REQUIRED_ROLES: "",
     AUTH_USERS_JSON: JSON.stringify([
       { id: "seller-1", username: "seller", role: "vendedor", passwordHash },
       { id: "analyst-1", username: "analyst", role: "analista", passwordHash: analystHash },
@@ -93,7 +94,9 @@ test("login cria sessao assinada e rotas protegidas exigem autenticacao real", {
       headers: { authorization: `Bearer ${loginBody.token}` },
     });
     assert.equal(me.status, 200);
-    assert.deepEqual(await me.json(), { user: { id: "seller-1", role: "vendedor" } });
+    const meBody = (await me.json()) as { user: unknown; mfa: unknown };
+    assert.deepEqual(meBody.user, { id: "seller-1", role: "vendedor" });
+    assert.deepEqual(meBody.mfa, { enabled: false, required: false, enrollmentPending: false });
 
     const query = await fetch(`${server.baseUrl}/api/makscore/query`, {
       method: "POST",
@@ -137,6 +140,7 @@ test("rate limits bloqueiam login e consultas repetidas", { concurrency: false }
     AUTH_ALLOW_DEV_HEADER_AUTH: "false",
     AUTH_LOGIN_RATE_LIMIT_PER_MIN: "1",
     AUTH_SECURE_COOKIES: "false",
+    AUTH_MFA_REQUIRED_ROLES: "",
     AUTH_USERS_JSON: JSON.stringify([
       { id: "seller-1", username: "seller", role: "vendedor", passwordHash },
     ]),

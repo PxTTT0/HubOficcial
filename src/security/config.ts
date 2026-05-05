@@ -14,6 +14,17 @@ function list(raw: string | undefined): string[] {
   return raw.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
+import type { Role } from "../modules/makscore/auth";
+
+const VALID_ROLES: Role[] = ["vendedor", "analista", "admin"];
+
+function roleList(raw: string | undefined, fallback: Role[]): Role[] {
+  if (raw === undefined) return fallback;
+  return list(raw)
+    .map((r) => r.toLowerCase())
+    .filter((r): r is Role => (VALID_ROLES as string[]).includes(r));
+}
+
 export interface SecurityConfig {
   sessionSecret: string;
   sessionCookieName: string;
@@ -27,10 +38,18 @@ export interface SecurityConfig {
   authFailureLimitPer15Min: number;
   allowDevHeaderAuth: boolean;
   envName: string;
+  mfaRequiredRoles: Role[];
+  mfaIssuer: string;
+  mfaChallengeTtlMs: number;
+  mfaRecoveryCodes: number;
+  mfaRateLimitPerMin: number;
+  mfaFailureLimitPer15Min: number;
 }
 
 export function loadSecurityConfig(): SecurityConfig {
   const envName = process.env.NODE_ENV ?? "development";
+  const defaultRequiredRoles: Role[] =
+    envName === "production" ? ["admin", "analista"] : [];
   return {
     sessionSecret: process.env.AUTH_SESSION_SECRET ?? "dev-insecure-session-secret-change-me",
     sessionCookieName: process.env.AUTH_SESSION_COOKIE_NAME ?? "hub_sid",
@@ -44,5 +63,11 @@ export function loadSecurityConfig(): SecurityConfig {
     authFailureLimitPer15Min: num(process.env.AUTH_LOGIN_FAILURE_LIMIT_PER_15_MIN, 25),
     allowDevHeaderAuth: bool(process.env.AUTH_ALLOW_DEV_HEADER_AUTH, envName !== "production"),
     envName,
+    mfaRequiredRoles: roleList(process.env.AUTH_MFA_REQUIRED_ROLES, defaultRequiredRoles),
+    mfaIssuer: process.env.AUTH_MFA_ISSUER ?? "HubVendasMakfil",
+    mfaChallengeTtlMs: num(process.env.AUTH_MFA_CHALLENGE_TTL_MS, 5 * 60_000),
+    mfaRecoveryCodes: num(process.env.AUTH_MFA_RECOVERY_CODES, 10),
+    mfaRateLimitPerMin: num(process.env.AUTH_MFA_RATE_LIMIT_PER_MIN, 5),
+    mfaFailureLimitPer15Min: num(process.env.AUTH_MFA_FAILURE_LIMIT_PER_15_MIN, 10),
   };
 }

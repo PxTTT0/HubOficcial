@@ -4,6 +4,7 @@ import type { NextFunction, Request, Response } from "express";
 import type { AuthenticatedUser, Role } from "../modules/makscore/auth";
 import { loadSecurityConfig, type SecurityConfig } from "./config";
 import { getClientIp } from "./http";
+import { MfaService } from "./mfa";
 import { loadPasswordHashingConfig, verifyPassword, type PasswordHashingConfig } from "./password";
 import { FixedWindowRateLimiter } from "./rateLimit";
 import {
@@ -21,12 +22,14 @@ interface SessionRecord {
   expiresAtMs: number;
   lastSeenAtMs: number;
   ip: string;
+  enrollmentPending: boolean;
 }
 
 export interface SecurityContext {
   cfg: SecurityConfig;
   passwordCfg: PasswordHashingConfig;
   users: UserRepository;
+  mfa: MfaService;
   requireAuth: (req: Request, res: Response, next: NextFunction) => void;
   requireRole: (...allowed: Role[]) => (req: Request, res: Response, next: NextFunction) => void;
   canSeeTechnicalDetails: (role: Role | undefined) => boolean;
@@ -93,12 +96,19 @@ export function createSecurityContext(
   passwordCfg: PasswordHashingConfig = loadPasswordHashingConfig(),
 ): SecurityContext {
   const sessions = new Map<string, SessionRecord>();
+  const mfa = new MfaService(cfg, users);
   const userLimiter = new FixedWindowRateLimiter(cfg.userRateLimitPerMin, 60_000);
   const ipLimiter = new FixedWindowRateLimiter(cfg.ipRateLimitPerMin, 60_000);
   const loginLimiter = new FixedWindowRateLimiter(cfg.authRateLimitPerMin, 60_000);
   const loginFailureLimiter = new FixedWindowRateLimiter(cfg.authFailureLimitPer15Min, 15 * 60_000);
+  const mfaIpLimiter = new FixedWindowRateLimiter(cfg.mfaRateLimitPerMin, 60_000);
+  const mfaFailureLimiter = new FixedWindowRateLimiter(cfg.mfaFailureLimitPer15Min, 15 * 60_000);
 
-  function issueSession(user: StoredUser, ip: string): SessionRecord {
+  function issueSession(
+    user: StoredUser,
+    ip: string,
+    options: { enrollmentPending?: boolean } = {},
+  ): SessionRecord {
     const now = Date.now();
     const session: SessionRecord = {
       sid: randomBytes(24).toString("base64url"),
@@ -109,6 +119,7 @@ export function createSecurityContext(
       expiresAtMs: now + cfg.sessionTtlMs,
       lastSeenAtMs: now,
       ip,
+      enrollmentPending: Boolean(options.enrollmentPending),
     };
     sessions.set(session.sid, session);
     return session;
@@ -185,7 +196,12 @@ export function createSecurityContext(
     return { id, role: normalizedRole };
   }
 
-  function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  function applyAuth(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    options: { allowEnrollmentPending?: boolean } = {},
+  ): void {
     const ip = getClientIp(req);
     const ipWindow = ipLimiter.check(`req:${ip}`);
     attachRateLimitHeaders(res, "X-RateLimit-IP", ipWindow.remaining, ipWindow.resetAtMs);
@@ -200,6 +216,10 @@ export function createSecurityContext(
       attachRateLimitHeaders(res, "X-RateLimit-User", userWindow.remaining, userWindow.resetAtMs);
       if (!userWindow.ok) {
         rejectRateLimited(res, userWindow.retryAfterSec);
+        return;
+      }
+      if (session.enrollmentPending && !options.allowEnrollmentPending) {
+        res.status(403).json({ error: "mfa_enrollment_required" });
         return;
       }
       req.user = { id: session.userId, role: session.role };
@@ -223,6 +243,14 @@ export function createSecurityContext(
     res.status(401).json({ error: "unauthenticated" });
   }
 
+  function requireAuth(req: Request, res: Response, next: NextFunction): void {
+    applyAuth(req, res, next);
+  }
+
+  function requireAuthAllowingEnrollment(req: Request, res: Response, next: NextFunction): void {
+    applyAuth(req, res, next, { allowEnrollmentPending: true });
+  }
+
   function requireRole(...allowed: Role[]) {
     return (req: Request, res: Response, next: NextFunction): void => {
       if (!req.user) {
@@ -239,6 +267,17 @@ export function createSecurityContext(
 
   function canSeeTechnicalDetails(role: Role | undefined): boolean {
     return role === "analista" || role === "admin";
+  }
+
+  function setSessionCookie(res: Response, session: SessionRecord, token: string): void {
+    res.setHeader(
+      "Set-Cookie",
+      `${cfg.sessionCookieName}=${encodeURIComponent(token)}; ${cookieAttributes(cfg, session.expiresAtMs)}`,
+    );
+  }
+
+  function findSessionByRequest(req: Request): SessionRecord | null {
+    return resolveSession(req);
   }
 
   const authRouter = Router();
@@ -282,12 +321,84 @@ export function createSecurityContext(
       return;
     }
 
+    if (user.mfa.enabled) {
+      const challenge = mfa.issueChallenge(user.id);
+      res.status(200).json({
+        mfaRequired: true,
+        challengeToken: challenge.token,
+        expiresAt: new Date(challenge.expiresAtMs).toISOString(),
+      });
+      return;
+    }
+
+    const enrollmentPending = mfa.isRequiredForRole(user.role) && !user.mfa.enabled;
+    const session = issueSession(user, ip, { enrollmentPending });
+    const token = encodeSessionToken(session);
+    setSessionCookie(res, session, token);
+    res.status(200).json({
+      token,
+      user: sanitizeUser(user),
+      expiresAt: new Date(session.expiresAtMs).toISOString(),
+      ...(enrollmentPending ? { mfaEnrollmentPending: true } : {}),
+    });
+  });
+
+  authRouter.post("/login/mfa", (req, res) => {
+    const ip = getClientIp(req);
+    const ipWindow = mfaIpLimiter.check(`mfa:${ip}`);
+    attachRateLimitHeaders(res, "X-RateLimit-MFA", ipWindow.remaining, ipWindow.resetAtMs);
+    if (!ipWindow.ok) {
+      rejectRateLimited(res, ipWindow.retryAfterSec);
+      return;
+    }
+
+    const challengeToken =
+      typeof req.body?.challengeToken === "string" ? req.body.challengeToken : "";
+    const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
+    const useRecovery = req.body?.recovery === true;
+
+    if (!challengeToken || !code) {
+      res.status(400).json({ error: "invalid_input" });
+      return;
+    }
+
+    const resolved = mfa.resolveChallenge(challengeToken);
+    if (!resolved) {
+      res.status(401).json({ error: "invalid_challenge" });
+      return;
+    }
+
+    const failureKey = `mfa-failure:${resolved.userId}`;
+    const failureWindow = mfaFailureLimiter.peek(failureKey);
+    if (!failureWindow.ok) {
+      rejectRateLimited(res, failureWindow.retryAfterSec);
+      return;
+    }
+
+    const ok = useRecovery
+      ? mfa.verifyRecoveryCode(resolved.userId, code)
+      : mfa.verifyTotp(resolved.userId, code);
+    if (!ok) {
+      mfaFailureLimiter.check(failureKey);
+      res.status(401).json({ error: "invalid_code" });
+      return;
+    }
+
+    const consumed = mfa.consumeChallenge(challengeToken);
+    if (!consumed) {
+      res.status(401).json({ error: "invalid_challenge" });
+      return;
+    }
+
+    const user = users.findById(consumed.userId);
+    if (!user || user.disabled) {
+      res.status(401).json({ error: "invalid_credentials" });
+      return;
+    }
+
     const session = issueSession(user, ip);
     const token = encodeSessionToken(session);
-    res.setHeader(
-      "Set-Cookie",
-      `${cfg.sessionCookieName}=${encodeURIComponent(token)}; ${cookieAttributes(cfg, session.expiresAtMs)}`,
-    );
+    setSessionCookie(res, session, token);
     res.status(200).json({
       token,
       user: sanitizeUser(user),
@@ -295,7 +406,7 @@ export function createSecurityContext(
     });
   });
 
-  authRouter.post("/logout", requireAuth, (req, res) => {
+  authRouter.post("/logout", requireAuthAllowingEnrollment, (req, res) => {
     const token = parseCookie(req.header("cookie"), cfg.sessionCookieName)
       || (req.header("authorization")?.startsWith("Bearer ")
         ? req.header("authorization")!.slice("Bearer ".length).trim()
@@ -315,19 +426,102 @@ export function createSecurityContext(
     res.status(204).end();
   });
 
-  authRouter.get("/me", requireAuth, (req, res) => {
+  authRouter.get("/me", requireAuthAllowingEnrollment, (req, res) => {
     const user = req.user ? users.findById(req.user.id) : null;
     if (!user) {
       res.status(404).json({ error: "user_not_found" });
       return;
     }
-    res.json({ user: sanitizeUser(user) });
+    const session = findSessionByRequest(req);
+    res.json({
+      user: sanitizeUser(user),
+      mfa: {
+        enabled: user.mfa.enabled,
+        required: mfa.isRequiredForRole(user.role),
+        enrollmentPending: Boolean(session?.enrollmentPending),
+      },
+    });
+  });
+
+  authRouter.post("/mfa/enroll", requireAuthAllowingEnrollment, (req, res) => {
+    const userId = req.user?.id;
+    const user = userId ? users.findById(userId) : null;
+    if (!user) {
+      res.status(404).json({ error: "user_not_found" });
+      return;
+    }
+    try {
+      const result = mfa.beginEnrollment(user.id, user.username);
+      res.status(200).json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "mfa_error";
+      const status = message === "mfa_already_enabled" ? 409 : 400;
+      res.status(status).json({ error: message });
+    }
+  });
+
+  authRouter.post("/mfa/verify-enrollment", requireAuthAllowingEnrollment, (req, res) => {
+    const userId = req.user?.id;
+    const user = userId ? users.findById(userId) : null;
+    if (!user) {
+      res.status(404).json({ error: "user_not_found" });
+      return;
+    }
+    const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
+    if (!code) {
+      res.status(400).json({ error: "invalid_input" });
+      return;
+    }
+    try {
+      const result = mfa.confirmEnrollment(user.id, code);
+      const session = findSessionByRequest(req);
+      if (session) {
+        session.enrollmentPending = false;
+      }
+      res.status(200).json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "mfa_error";
+      const status =
+        message === "invalid_code"
+          ? 401
+          : message === "mfa_already_enabled"
+            ? 409
+            : 400;
+      res.status(status).json({ error: message });
+    }
+  });
+
+  authRouter.post("/mfa/disable", requireAuth, async (req, res) => {
+    const userId = req.user?.id;
+    const user = userId ? users.findById(userId) : null;
+    if (!user) {
+      res.status(404).json({ error: "user_not_found" });
+      return;
+    }
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+    const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
+    if (password.length < 8 || !code) {
+      res.status(400).json({ error: "invalid_input" });
+      return;
+    }
+    const passwordOk = await verifyPassword(user.passwordHash, password);
+    if (!passwordOk) {
+      res.status(401).json({ error: "invalid_credentials" });
+      return;
+    }
+    if (!user.mfa.enabled || !mfa.verifyTotp(user.id, code)) {
+      res.status(401).json({ error: "invalid_code" });
+      return;
+    }
+    mfa.disable(user.id);
+    res.status(204).end();
   });
 
   return {
     cfg,
     passwordCfg,
     users,
+    mfa,
     requireAuth,
     requireRole,
     canSeeTechnicalDetails,

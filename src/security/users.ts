@@ -1,16 +1,47 @@
 import type { Role } from "../modules/makscore/auth";
 
+export interface MfaState {
+  enabled: boolean;
+  secret: string | null;
+  /** Argon2id-hashed recovery codes; consumed on use. */
+  recoveryHashes: string[];
+  /** Last accepted TOTP step (replay protection). */
+  lastUsedStep: number;
+  enrolledAtMs: number | null;
+}
+
 export interface StoredUser {
   id: string;
   username: string;
   role: Role;
   passwordHash: string;
   disabled?: boolean;
+  mfa: MfaState;
+}
+
+export interface UserMfaUpdate {
+  enabled?: boolean;
+  secret?: string | null;
+  recoveryHashes?: string[];
+  lastUsedStep?: number;
+  enrolledAtMs?: number | null;
 }
 
 export interface UserRepository {
   findByUsername(username: string): StoredUser | null;
   findById(id: string): StoredUser | null;
+  updateMfa(id: string, update: UserMfaUpdate): StoredUser | null;
+  consumeRecoveryHash(id: string, hash: string): StoredUser | null;
+}
+
+export function emptyMfaState(): MfaState {
+  return {
+    enabled: false,
+    secret: null,
+    recoveryHashes: [],
+    lastUsedStep: -1,
+    enrolledAtMs: null,
+  };
 }
 
 function normalizeUsername(username: string): string {
@@ -38,6 +69,7 @@ function parseUsersJson(raw: string | undefined): StoredUser[] {
         role: item.role as Role,
         passwordHash: item.passwordHash,
         disabled: Boolean(item.disabled),
+        mfa: emptyMfaState(),
       }];
     });
   } catch {
@@ -55,6 +87,7 @@ function loadBootstrapUsers(): StoredUser[] {
       username: normalizeUsername(adminUsername),
       role: "admin",
       passwordHash: adminPasswordHash,
+      mfa: emptyMfaState(),
     });
   }
   return configured;
@@ -67,7 +100,11 @@ export class InMemoryUserRepository implements UserRepository {
   constructor(users: StoredUser[] = loadBootstrapUsers()) {
     for (const user of users) {
       const normalized = normalizeUsername(user.username);
-      const stored = { ...user, username: normalized };
+      const stored: StoredUser = {
+        ...user,
+        username: normalized,
+        mfa: user.mfa ?? emptyMfaState(),
+      };
       this.byId.set(stored.id, stored);
       this.byUsername.set(stored.username, stored);
     }
@@ -79,5 +116,29 @@ export class InMemoryUserRepository implements UserRepository {
 
   findById(id: string): StoredUser | null {
     return this.byId.get(id) ?? null;
+  }
+
+  updateMfa(id: string, update: UserMfaUpdate): StoredUser | null {
+    const user = this.byId.get(id);
+    if (!user) return null;
+    const next: MfaState = {
+      enabled: update.enabled ?? user.mfa.enabled,
+      secret: update.secret !== undefined ? update.secret : user.mfa.secret,
+      recoveryHashes: update.recoveryHashes ?? user.mfa.recoveryHashes,
+      lastUsedStep: update.lastUsedStep ?? user.mfa.lastUsedStep,
+      enrolledAtMs:
+        update.enrolledAtMs !== undefined ? update.enrolledAtMs : user.mfa.enrolledAtMs,
+    };
+    user.mfa = next;
+    return user;
+  }
+
+  consumeRecoveryHash(id: string, hash: string): StoredUser | null {
+    const user = this.byId.get(id);
+    if (!user) return null;
+    const before = user.mfa.recoveryHashes.length;
+    user.mfa.recoveryHashes = user.mfa.recoveryHashes.filter((h) => h !== hash);
+    if (user.mfa.recoveryHashes.length === before) return null;
+    return user;
   }
 }
