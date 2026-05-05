@@ -1,0 +1,188 @@
+/* Hub de Vendas Makfil — Design Tokens */
+:root {
+  /* Neutrals — cool technical gray */
+  --c-bg:        #F4F5F7;
+  --c-surface:   #FFFFFF;
+  --c-surface-2: #FAFBFC;
+  --c-line:      #E4E7EB;
+  --c-line-soft: #EEF0F3;
+  --c-line-strong:#D7DCE3;
+  --c-ink:       #0E1116;
+  --c-ink-2:     #2A2F38;
+  --c-ink-3:     #4B5260;
+  --c-ink-4:     #6B7280;
+  --c-ink-5:     #9AA0AB;
+
+  /* Makfil yellow (primary action / brand) */
+  --c-brand:     #FCC00A;
+  --c-brand-600: #E0A800;
+  --c-brand-700: #9E7702;
+  --c-brand-ink: #4A3800;     /* readable text on yellow */
+  --c-brand-50:  #FFF8E1;
+  --c-brand-100: #FFEFB8;
+  --c-brand-200: #FFE48A;
+  --c-accent:    #9E7702;     /* support / tags / emphasis borders */
+
+  /* Status — operational decision colors */
+  --c-ok:        #117C44;
+  --c-ok-bg:     #E5F4EC;
+  --c-ok-line:   #B6E1C7;
+
+  --c-warn:      #B6701A;
+  --c-warn-bg:   #FBF1DE;
+  --c-warn-line: #F1D7A4;
+
+  --c-risk:      #B0121A;
+  --c-risk-bg:   #FCEAEB;
+  --c-risk-line: #F1B7BB;
+
+  --c-info:      #1B5FB3;
+  --c-info-bg:   #E4EEFA;
+  --c-info-line: #B7D0EE;
+
+  --c-neutral-bg:#EEF0F3;
+
+  /* Type */
+  --ff-sans: "Inter", "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --ff-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Radii */
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 8px;
+  --r-4: 10px;
+  --r-pill: 999px;
+
+  /* Shadows */
+  --sh-1: 0 1px 0 rgba(14,17,22,0.04), 0 1px 2px rgba(14,17,22,0.04);
+  --sh-2: 0 1px 0 rgba(14,17,22,0.04), 0 4px 14px rgba(14,17,22,0.06);
+  --sh-pop: 0 8px 28px rgba(14,17,22,0.16);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--ff-sans);
+  color: var(--c-ink);
+  background: var(--c-bg);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+  font-size: 14px;
+  line-height: 1.4;
+}
+button { font-family: inherit; }
+input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+
+/* ---- Reusable atoms ---- */
+
+.mono { font-family: var(--ff-mono); }
+.tnum { font-variant-numeric: tabular-nums; }
+
+.label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-ink-4);
+}
+
+.divider { height: 1px; background: var(--c-line); }
+
+/* Status badges */
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+.badge.ok    { color: var(--c-ok);   background: var(--c-ok-bg);   border-color: var(--c-ok-line); }
+.badge.warn  { color: var(--c-warn); background: var(--c-warn-bg); border-color: var(--c-warn-line); }
+.badge.risk  { color: var(--c-risk); background: var(--c-risk-bg); border-color: var(--c-risk-line); }
+.badge.info  { color: var(--c-info); background: var(--c-info-bg); border-color: var(--c-info-line); }
+.badge.neutral { color: var(--c-ink-3); background: var(--c-neutral-bg); border-color: var(--c-line-strong); }
+.badge.brand { color: var(--c-brand-700); background: var(--c-brand-50); border-color: var(--c-brand-100); }
+.badge.accent { color: var(--c-brand-700); background: var(--c-brand-50); border-color: var(--c-brand-200); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 14px; min-height: 40px;
+  border-radius: var(--r-2);
+  font-size: 14px; font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  user-select: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.btn-primary  { background: var(--c-ink);    color: #fff; }
+.btn-primary:hover { background: #1B1F26; }
+.btn-brand    { background: var(--c-brand);  color: var(--c-brand-ink); border-color: var(--c-brand-600); }
+.btn-brand:hover { background: var(--c-brand-600); }
+.btn-secondary{ background: #fff; color: var(--c-ink); border-color: var(--c-line-strong); }
+.btn-secondary:hover { background: var(--c-surface-2); }
+.btn-ghost    { background: transparent; color: var(--c-ink-2); }
+.btn-ghost:hover { background: var(--c-line-soft); }
+.btn-block { width: 100%; }
+.btn-lg { min-height: 48px; font-size: 15px; padding: 12px 16px; }
+.btn-sm { min-height: 32px; font-size: 12.5px; padding: 6px 10px; }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* Inputs */
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label { font-size: 12px; font-weight: 600; color: var(--c-ink-3); letter-spacing: 0.01em; }
+.field > .hint { font-size: 11px; color: var(--c-ink-4); }
+.input, .select, .textarea {
+  background: #fff;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--r-2);
+  padding: 10px 12px;
+  min-height: 40px;
+  font-size: 14px;
+  color: var(--c-ink);
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.input:focus, .select:focus, .textarea:focus {
+  border-color: var(--c-brand-700);
+  box-shadow: 0 0 0 3px rgba(252,192,10,0.28);
+}
+.input.with-prefix { padding-left: 36px; }
+.input-wrap { position: relative; }
+.input-wrap .prefix {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--c-ink-4); font-size: 12px; pointer-events: none;
+}
+
+/* Cards / surfaces */
+.surface {
+  background: var(--c-surface);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-3);
+}
+
+/* Rows */
+.row { display: flex; align-items: center; gap: 8px; }
+.col { display: flex; flex-direction: column; gap: 8px; }
+.spacer { flex: 1; }
+
+/* Scrollbar (subtle) */
+.scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--c-line-strong); border-radius: 8px; }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* Skeleton */
+@keyframes skel {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+.skel {
+  background: linear-gradient(90deg, #ECEEF1 0%, #F5F6F8 50%, #ECEEF1 100%);
+  background-size: 200px 100%;
+  animation: skel 1.2s linear infinite;
+  border-radius: 4px;
+}

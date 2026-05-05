@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Hub de Vendas Makfil — Print</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="tokens.css"/>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+
+    html, body { background: #fff; }
+    body {
+      margin: 0; padding: 0;
+      font-family: "Inter", system-ui, sans-serif;
+      color: #0E1116;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .page {
+      width: 100%;
+      page-break-after: always;
+      break-after: page;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    .page:last-child { page-break-after: auto; break-after: auto; }
+
+    .page-header {
+      display: flex; align-items: baseline; justify-content: space-between;
+      padding: 0 0 10px;
+      border-bottom: 1px solid #E4E6EB;
+      margin-bottom: 14px;
+    }
+    .page-header .left h1 {
+      margin: 0; font-size: 14px; font-weight: 700; letter-spacing: -0.1px;
+    }
+    .page-header .left p {
+      margin: 2px 0 0; font-size: 10.5px; color: #6B7280;
+    }
+    .page-header .right {
+      font-size: 10px; font-family: "JetBrains Mono", monospace;
+      color: #9AA0AB; letter-spacing: 0.04em;
+    }
+
+    /* Desktop page = full width app frame */
+    .desktop-frame {
+      width: 100%;
+      height: 175mm;
+      background: #fff;
+      border: 1px solid #E4E6EB;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex; flex-direction: column;
+      break-inside: avoid;
+    }
+    .desktop-bar {
+      height: 28px; background: #F3F4F6;
+      display: flex; align-items: center; gap: 6px; padding: 0 12px;
+      border-bottom: 1px solid #E4E6EB; flex-shrink: 0;
+    }
+    .traffic { width: 9px; height: 9px; border-radius: 5px; }
+    .url-pill {
+      margin-left: 10px; font-family: "JetBrains Mono", monospace; font-size: 9.5px;
+      color: #6B7280; background: #fff; padding: 3px 8px; border-radius: 4px;
+      border: 1px solid #E4E6EB;
+    }
+    .desktop-screen {
+      flex: 1; min-height: 0; background: var(--c-bg);
+      display: flex; flex-direction: column;
+    }
+
+    /* Mobile pages: 2 phones side-by-side per A4 landscape page */
+    .mobile-page-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16mm;
+      align-items: start;
+      justify-items: center;
+      padding-top: 4mm;
+    }
+    .phone-shell { display: flex; flex-direction: column; align-items: center; gap: 8px; break-inside: avoid; }
+    .phone-label {
+      font-size: 11px; font-weight: 700; color: #0E1116;
+      letter-spacing: 0.02em;
+    }
+    .phone-sub { font-size: 10px; color: #6B7280; }
+    .phone {
+      width: 280px; height: 606px;
+      background: #0E1116;
+      border-radius: 36px;
+      padding: 7px;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
+      flex-shrink: 0;
+    }
+    .phone-screen {
+      width: 100%; height: 100%;
+      background: var(--c-bg);
+      border-radius: 30px;
+      overflow: hidden;
+      display: flex; flex-direction: column;
+      position: relative;
+    }
+    .notch {
+      position: absolute; top: 11px; left: 50%; transform: translateX(-50%);
+      width: 80px; height: 22px; background: #000; border-radius: 16px; z-index: 50;
+    }
+    .home-indicator {
+      position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+      width: 95px; height: 3px; background: #0E1116; border-radius: 2px; z-index: 50;
+    }
+
+    /* React-mounted screen content needs to scale down a bit on the smaller print phones */
+    .phone-scaled {
+      transform-origin: top left;
+      transform: scale(0.7179); /* 280/390 = 0.7179 */
+      width: 390px;
+      height: 844px;
+    }
+
+    .footer {
+      position: fixed;
+      bottom: 4mm; left: 12mm; right: 12mm;
+      display: flex; justify-content: space-between;
+      font-size: 9px; color: #9AA0AB; font-family: "JetBrains Mono", monospace;
+      letter-spacing: 0.04em;
+    }
+
+    /* Cover page */
+    .cover {
+      height: 175mm;
+      display: flex; flex-direction: column;
+      justify-content: space-between;
+      padding: 14mm 12mm;
+      box-sizing: border-box;
+      background: #fff;
+      border: 1px solid #E4E6EB;
+      border-radius: 8px;
+    }
+    .cover .top { font-size: 11px; color: #6B7280; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; }
+    .cover .center h1 { margin: 0; font-size: 56px; font-weight: 800; letter-spacing: -1.5px; line-height: 1; }
+    .cover .center .sub { margin-top: 14px; font-size: 18px; color: #4B5563; max-width: 520px; line-height: 1.4; }
+    .cover .bottom { display: flex; justify-content: space-between; font-size: 11px; color: #6B7280; }
+    .cover .bottom strong { color: #0E1116; font-weight: 700; }
+    .accent-bar {
+      width: 64px; height: 4px; background: var(--c-brand, #C8161E); border-radius: 2px; margin-bottom: 18px;
+    }
+
+    .toc {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px;
+      margin-top: 24px;
+    }
+    .toc-row {
+      display: flex; align-items: baseline; justify-content: space-between;
+      padding: 6px 0; border-bottom: 1px dotted #D1D5DB;
+      font-size: 12.5px;
+    }
+    .toc-row .label { font-weight: 600; color: #0E1116; }
+    .toc-row .pg { font-family: "JetBrains Mono", monospace; color: #6B7280; font-size: 11px; }
+  </style>
+</head>
+<body>
+
+  <!-- Cover -->
+  <div class="page">
+    <div class="cover">
+      <div class="top">
+        <div class="accent-bar"></div>
+        Hub de Vendas Makfil · v1.0
+      </div>
+      <div class="center">
+        <h1>Hub de<br/>Vendas.</h1>
+        <div class="sub">Aplicação operacional. Módulos independentes — proposta, frete, MakScore, tabela de preços e administração logística.</div>
+        <div class="toc">
+          <div class="toc-row"><span class="label">Aplicação · Desktop</span><span class="pg">p.02</span></div>
+          <div class="toc-row"><span class="label">Hub — Mobile</span><span class="pg">p.03</span></div>
+          <div class="toc-row"><span class="label">MakScore · Proposta</span><span class="pg">p.03</span></div>
+          <div class="toc-row"><span class="label">Frete · Tabela</span><span class="pg">p.04</span></div>
+          <div class="toc-row"><span class="label">Admin Logístico</span><span class="pg">p.04</span></div>
+        </div>
+      </div>
+      <div class="bottom">
+        <span>Documento de design · build 2026.05</span>
+        <span><strong>Confidencial · uso interno Makfil</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Desktop page -->
+  <div class="page">
+    <div class="page-header">
+      <div class="left">
+        <h1>Aplicação · Desktop</h1>
+        <p>Sidebar com módulos independentes · área ativa exibe o módulo selecionado.</p>
+      </div>
+      <div class="right">hub.makfil.com.br</div>
+    </div>
+    <div class="desktop-frame">
+      <div class="desktop-bar">
+        <div class="traffic" style="background:#FF5F57"></div>
+        <div class="traffic" style="background:#FEBC2E"></div>
+        <div class="traffic" style="background:#28C840"></div>
+        <div class="url-pill">hub.makfil.com.br</div>
+      </div>
+      <div class="desktop-screen" id="screen-app"></div>
+    </div>
+  </div>
+
+  <!-- Mobile pages: 2 per page -->
+  <div class="page">
+    <div class="page-header">
+      <div class="left">
+        <h1>Mobile · Hub & MakScore</h1>
+        <p>Central de módulos e análise interna por CNPJ via E-POSI · TOTAL_PJ.</p>
+      </div>
+      <div class="right">390 × 844 · iOS</div>
+    </div>
+    <div class="mobile-page-grid">
+      <div class="phone-shell">
+        <div class="phone-label">Hub — central de módulos</div>
+        <div class="phone-sub">Ações rápidas · status por módulo · atividade recente</div>
+        <div class="phone"><div class="notch"></div><div class="phone-screen" id="screen-home"></div><div class="home-indicator"></div></div>
+      </div>
+      <div class="phone-shell">
+        <div class="phone-label">MakScore — análise interna</div>
+        <div class="phone-sub">Decisão · score · motivos · validade · histórico</div>
+        <div class="phone"><div class="notch"></div><div class="phone-screen" id="screen-score"></div><div class="home-indicator"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="page-header">
+      <div class="left">
+        <h1>Mobile · Proposta & Frete</h1>
+        <p>Fluxo de proposta com frete embutido · calculadora avulsa independente com memória.</p>
+      </div>
+      <div class="right">390 × 844 · iOS</div>
+    </div>
+    <div class="mobile-page-grid">
+      <div class="phone-shell">
+        <div class="phone-label">Proposta Rápida</div>
+        <div class="phone-sub">Cliente → Obra → Itens → Frete → Locação → Resumo</div>
+        <div class="phone"><div class="notch"></div><div class="phone-screen" id="screen-proposta"></div><div class="home-indicator"></div></div>
+      </div>
+      <div class="phone-shell">
+        <div class="phone-label">Frete 2.0 — cálculo avulso</div>
+        <div class="phone-sub">Reaproveitamento em proposta · histórico de cálculos</div>
+        <div class="phone"><div class="notch"></div><div class="phone-screen" id="screen-frete"></div><div class="home-indicator"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="page-header">
+      <div class="left">
+        <h1>Mobile · Tabela & Administração</h1>
+        <p>Consulta governada de preços vigentes · área administrativa sensível para parâmetros logísticos.</p>
+      </div>
+      <div class="right">390 × 844 · iOS</div>
+    </div>
+    <div class="mobile-page-grid">
+      <div class="phone-shell">
+        <div class="phone-label">Tabela de Preços</div>
+        <div class="phone-sub">Vigência · busca · categorias · fonte Sisloc</div>
+        <div class="phone"><div class="notch"></div><div class="phone-screen" id="screen-tabela"></div><div class="home-indicator"></div></div>
+      </div>
+      <div class="phone-shell">
+        <div class="phone-label">Configurações Logísticas · ADMIN</div>
+        <div class="phone-sub">Vigente vs rascunho · CDs · regras · auditoria</div>
+        <div class="phone"><div class="notch"></div><div class="phone-screen" id="screen-admin"></div><div class="home-indicator"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="text/babel" src="app/icons.jsx"></script>
+  <script type="text/babel" src="app/shell.jsx"></script>
+  <script type="text/babel" src="app/home.jsx"></script>
+  <script type="text/babel" src="app/makscore.jsx"></script>
+  <script type="text/babel" src="app/proposta-frete.jsx"></script>
+  <script type="text/babel" src="app/tabela-admin.jsx"></script>
+
+  <script type="text/babel" data-presets="env,react">
+    const { useState } = React;
+
+    // ---------- Mobile, scaled to fit smaller print phone ----------
+    function PrintMobile({ initial = "home" }) {
+      const [tab, setTab] = useState(initial);
+      let screen;
+      if (tab === "home")          screen = <Home onNav={setTab} isAdmin={true}/>;
+      else if (tab === "score")    screen = <MakScore onBack={() => setTab("home")}/>;
+      else if (tab === "proposta") screen = <Proposta onBack={() => setTab("home")}/>;
+      else if (tab === "frete")    screen = <Frete onBack={() => setTab("home")}/>;
+      else if (tab === "tabela")   screen = <Tabela onBack={() => setTab("home")}/>;
+      else if (tab === "admin")    screen = <Admin onBack={() => setTab("home")}/>;
+      return (
+        <div className="phone-scaled" style={{ display: "flex", flexDirection: "column", background: "var(--c-bg)" }}>
+          <StatusBar tone="dark"/>
+          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>{screen}</div>
+          <BottomNav active={tab === "admin" ? "home" : tab} onChange={setTab} isAdmin={true}/>
+        </div>
+      );
+    }
+
+    // ---------- Desktop app shell ----------
+    function DesktopApp({ initialModule = "home" }) {
+      const [mod, setMod] = useState(initialModule);
+      const navItems = [
+        { id: "home",     label: "Hub",                Icon: IconHome },
+        { id: "proposta", label: "Proposta Rápida",    Icon: IconProposal },
+        { id: "frete",    label: "Frete 2.0",          Icon: IconTruck },
+        { id: "score",    label: "MakScore",           Icon: IconScore, internal: true },
+        { id: "tabela",   label: "Tabela de Preços",   Icon: IconTable },
+      ];
+      let content;
+      if (mod === "home")          content = <Home onNav={setMod} isAdmin={true}/>;
+      else if (mod === "score")    content = <MakScore onBack={() => setMod("home")}/>;
+      else if (mod === "proposta") content = <Proposta onBack={() => setMod("home")}/>;
+      else if (mod === "frete")    content = <Frete onBack={() => setMod("home")}/>;
+      else if (mod === "tabela")   content = <Tabela onBack={() => setMod("home")}/>;
+      else if (mod === "admin")    content = <Admin onBack={() => setMod("home")}/>;
+      return (
+        <div style={{ display: "flex", height: "100%" }}>
+          <aside style={{
+            width: 220, background: "var(--c-surface)",
+            borderRight: "1px solid var(--c-line)",
+            display: "flex", flexDirection: "column", padding: "14px 9px",
+            flexShrink: 0,
+          }}>
+            <div style={{ padding: "0 8px 14px", borderBottom: "1px solid var(--c-line)", marginBottom: 10 }}>
+              <BrandMark/>
+            </div>
+            <div className="label" style={{ padding: "4px 8px 8px" }}>Módulos</div>
+            {navItems.map(({ id, label, Icon, internal }) => {
+              const on = mod === id;
+              return (
+                <button key={id} onClick={() => setMod(id)} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "8px 10px", borderRadius: 6,
+                  background: on ? "var(--c-neutral-bg)" : "transparent",
+                  border: "none", cursor: "pointer", textAlign: "left",
+                  fontSize: 12.5, fontWeight: on ? 700 : 600,
+                  color: on ? "var(--c-ink)" : "var(--c-ink-3)",
+                  marginBottom: 2,
+                }}>
+                  <Icon size={15} strokeWidth={on ? 1.9 : 1.6}/>
+                  <span style={{ flex: 1 }}>{label}</span>
+                  {internal && <span className="badge info" style={{ fontSize: 9, padding: "1px 5px" }}>INT</span>}
+                </button>
+              );
+            })}
+            <div className="label" style={{ padding: "14px 8px 8px" }}>Administração</div>
+            <button onClick={() => setMod("admin")} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "8px 10px", borderRadius: 6,
+              background: mod === "admin" ? "var(--c-brand-50)" : "transparent",
+              border: "none", cursor: "pointer", textAlign: "left",
+              fontSize: 12.5, fontWeight: mod === "admin" ? 700 : 600,
+              color: mod === "admin" ? "var(--c-brand)" : "var(--c-ink-3)",
+            }}>
+              <IconAdmin size={15}/>
+              <span style={{ flex: 1 }}>Configurações Logísticas</span>
+              <IconLock size={11}/>
+            </button>
+            <div style={{ flex: 1 }}/>
+            <div style={{ padding: "9px", borderTop: "1px solid var(--c-line)", marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 14, background: "var(--c-neutral-bg)", display: "grid", placeItems: "center", fontWeight: 700, color: "var(--c-ink-2)", fontSize: 11 }}>AS</div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--c-ink)" }}>Alison Souza</div>
+                <div style={{ fontSize: 10, color: "var(--c-ink-4)" }}>Admin · Vendas</div>
+              </div>
+            </div>
+          </aside>
+          <main style={{ flex: 1, minWidth: 0, overflow: "hidden", display: "flex", background: "var(--c-bg)" }}>
+            <div style={{ flex: 1, minWidth: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              {content}
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    function mountMobile(id, initial) {
+      const el = document.getElementById(id);
+      if (el) ReactDOM.createRoot(el).render(<PrintMobile initial={initial}/>);
+    }
+    mountMobile("screen-home",     "home");
+    mountMobile("screen-score",    "score");
+    mountMobile("screen-proposta", "proposta");
+    mountMobile("screen-frete",    "frete");
+    mountMobile("screen-tabela",   "tabela");
+    mountMobile("screen-admin",    "admin");
+
+    const deskEl = document.getElementById("screen-app");
+    if (deskEl) ReactDOM.createRoot(deskEl).render(<DesktopApp initialModule="home"/>);
+
+    // Auto-print after fonts + render settle
+    (async () => {
+      try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) {}
+      await new Promise(r => setTimeout(r, 800));
+      window.print();
+    })();
+  </script>
+</body>
+</html>

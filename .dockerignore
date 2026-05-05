@@ -1,0 +1,28 @@
+# Dependências e build local — recriados dentro do container
+node_modules
+dist
+
+# Segredos — NUNCA entram na imagem
+.env
+.env.local
+.env.production
+
+# Git e planejamento — não necessários em produção
+.git
+.planning
+.claude
+AGENTS.md
+README.md
+docs
+deploy
+
+# Testes — não rodam em produção
+tests
+
+# Arquivos de desenvolvimento
+*.log
+.DS_Store
+*.png
+
+# ts-node não é usado na imagem de produção
+# (só precisamos do tsc output)

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>Hub de Vendas — Makfil</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="tokens.css"/>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <style>
+    html, body { height: 100%; margin: 0; background: var(--c-bg); }
+    #app-root { height: 100vh; height: 100dvh; display: flex; flex-direction: column; background: var(--c-bg); }
+  </style>
+</head>
+<body>
+  <div id="app-root"></div>
+
+  <script type="text/babel" src="app/icons.jsx"></script>
+  <script type="text/babel" src="app/shell.jsx"></script>
+  <script type="text/babel" src="app/home.jsx"></script>
+  <script type="text/babel" src="app/makscore.jsx"></script>
+  <script type="text/babel" src="app/proposta-frete.jsx"></script>
+  <script type="text/babel" src="app/tabela-admin.jsx"></script>
+
+  <script type="text/babel" data-presets="env,react">
+    const { useState, useEffect } = React;
+
+    function useViewport() {
+      const [w, setW] = useState(typeof window !== "undefined" ? window.innerWidth : 1280);
+      useEffect(() => {
+        const onR = () => setW(window.innerWidth);
+        window.addEventListener("resize", onR);
+        return () => window.removeEventListener("resize", onR);
+      }, []);
+      return w;
+    }
+
+    function App() {
+      const [mod, setMod] = useState("home");
+      const w = useViewport();
+      const compact = w < 900;
+      const isAdmin = true;
+
+      let content;
+      if (mod === "home")          content = <Home onNav={setMod} isAdmin={isAdmin}/>;
+      else if (mod === "score")    content = <MakScore onBack={() => setMod("home")}/>;
+      else if (mod === "proposta") content = <Proposta onBack={() => setMod("home")}/>;
+      else if (mod === "frete")    content = <Frete onBack={() => setMod("home")}/>;
+      else if (mod === "tabela")   content = <Tabela onBack={() => setMod("home")}/>;
+      else if (mod === "admin")    content = <Admin onBack={() => setMod("home")}/>;
+
+      // Mobile: bottom-nav layout, full bleed
+      if (compact) {
+        return (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--c-bg)" }}>
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>{content}</div>
+            <BottomNav active={mod === "admin" ? "home" : mod} onChange={setMod} isAdmin={isAdmin}/>
+          </div>
+        );
+      }
+
+      // Desktop: sidebar + content
+      const navItems = [
+        { id: "home",     label: "Hub",                Icon: IconHome },
+        { id: "proposta", label: "Proposta Rápida",    Icon: IconProposal },
+        { id: "frete",    label: "Frete 2.0",          Icon: IconTruck },
+        { id: "score",    label: "MakScore",           Icon: IconScore, internal: true },
+        { id: "tabela",   label: "Tabela de Preços",   Icon: IconTable },
+      ];
+      return (
+        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+          <aside style={{
+            width: 244, background: "var(--c-surface)",
+            borderRight: "1px solid var(--c-line)",
+            display: "flex", flexDirection: "column", padding: "16px 10px",
+            flexShrink: 0,
+          }}>
+            <div style={{ padding: "0 8px 16px", borderBottom: "1px solid var(--c-line)", marginBottom: 12 }}>
+              <BrandMark/>
+            </div>
+            <div className="label" style={{ padding: "4px 8px 8px" }}>Módulos</div>
+            {navItems.map(({ id, label, Icon, internal }) => {
+              const on = mod === id;
+              return (
+                <button key={id} onClick={() => setMod(id)} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "10px 10px", borderRadius: 8,
+                  background: on ? "var(--c-brand-50)" : "transparent",
+                  border: "none", cursor: "pointer", textAlign: "left",
+                  fontSize: 13.5, fontWeight: on ? 700 : 600,
+                  color: on ? "var(--c-brand-700)" : "var(--c-ink-3)",
+                  marginBottom: 2, position: "relative",
+                }}>
+                  {on && <span style={{ position: "absolute", left: 0, top: 8, bottom: 8, width: 3, borderRadius: 2, background: "var(--c-brand)" }}/>}
+                  <Icon size={17} strokeWidth={on ? 1.9 : 1.6}/>
+                  <span style={{ flex: 1 }}>{label}</span>
+                  {internal && <span className="badge accent" style={{ fontSize: 9, padding: "1px 5px" }}>INT</span>}
+                </button>
+              );
+            })}
+
+            <div className="label" style={{ padding: "16px 8px 8px" }}>Administração</div>
+            <button onClick={() => setMod("admin")} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 10px", borderRadius: 8,
+              background: mod === "admin" ? "#1A1C22" : "transparent",
+              border: mod === "admin" ? "1px solid #1A1C22" : "1px solid transparent",
+              cursor: "pointer", textAlign: "left",
+              fontSize: 13.5, fontWeight: mod === "admin" ? 700 : 600,
+              color: mod === "admin" ? "#fff" : "var(--c-ink-3)",
+            }}>
+              <IconAdmin size={17}/>
+              <span style={{ flex: 1 }}>Configurações Logísticas</span>
+              <IconLock size={12}/>
+            </button>
+
+            <div style={{ flex: 1 }}/>
+            <div style={{ padding: "10px", borderTop: "1px solid var(--c-line)", marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 16, background: "var(--c-brand)", display: "grid", placeItems: "center", fontWeight: 800, color: "var(--c-brand-ink)", fontSize: 12 }}>AS</div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--c-ink)" }}>Alison Souza</div>
+                <div style={{ fontSize: 10.5, color: "var(--c-ink-4)" }}>Admin · Vendas</div>
+              </div>
+            </div>
+          </aside>
+
+          <main style={{ flex: 1, minWidth: 0, overflow: "hidden", display: "flex", background: "var(--c-bg)" }}>
+            <div style={{ flex: 1, minWidth: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              {content}
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("app-root")).render(<App/>);
+  </script>
+</body>
+</html>

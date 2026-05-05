@@ -1,0 +1,81 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HUB Vendas API — Stack Portainer / Docker Compose
+#
+# COMO USAR NO PORTAINER:
+#   1. Stacks → Add stack → Web editor  (cole este arquivo)
+#   2. Na aba "Env" do Portainer, adicione as variáveis sensíveis:
+#        MAKSCORE_EPOSI_LOGIN, MAKSCORE_EPOSI_PASSWORD, MAKSCORE_CNPJ_PEPPER
+#   3. Deploy the stack
+#
+# VARIÁVEIS OBRIGATÓRIAS (definir no Portainer):
+#   MAKSCORE_EPOSI_LOGIN      - login da API E-POSI
+#   MAKSCORE_EPOSI_PASSWORD   - senha da API E-POSI
+#   MAKSCORE_CNPJ_PEPPER      - pepper para hash de CNPJ (string aleatória)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  hub-vendas-api:
+    # Imagem já construída no VPS (ver DEPLOY.md).
+    # Para builds automáticos via Portainer Git stack, trocar por: build: .
+    image: makfil/hub-vendas-api:latest
+    container_name: hub-vendas-api
+    restart: unless-stopped
+
+    # Porta exposta APENAS no loopback — nginx/NPM faz o proxy público.
+    # Para acesso direto sem nginx, trocar por "3000:3000".
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+
+      # ── Conector E-POSI ──────────────────────────────────────────────────
+      MAKSCORE_EPOSI_MODE: ${MAKSCORE_EPOSI_MODE:-live}
+      MAKSCORE_EPOSI_AUTH_URL: ${MAKSCORE_EPOSI_AUTH_URL:-https://eposi.toolsdata.com.br/api/gatewaybiro/authentication}
+      MAKSCORE_EPOSI_QUERY_URL: ${MAKSCORE_EPOSI_QUERY_URL:-https://eposi.toolsdata.com.br/api/gatewaybiro/processfilter}
+
+      # Credenciais — definir na aba Env do Portainer (não commitar)
+      MAKSCORE_EPOSI_LOGIN: ${MAKSCORE_EPOSI_LOGIN}
+      MAKSCORE_EPOSI_PASSWORD: ${MAKSCORE_EPOSI_PASSWORD}
+
+      # ── Política Makfil ──────────────────────────────────────────────────
+      MAKSCORE_DEFAULT_PRODUCT: ${MAKSCORE_DEFAULT_PRODUCT:-TOTAL_PJ}
+      MAKSCORE_APPROVE_MIN_SCORE: ${MAKSCORE_APPROVE_MIN_SCORE:-700}
+      MAKSCORE_REPROVE_MAX_SCORE: ${MAKSCORE_REPROVE_MAX_SCORE:-400}
+      MAKSCORE_VALIDITY_HOURS: ${MAKSCORE_VALIDITY_HOURS:-24}
+      MAKSCORE_HIGH_TICKET_AMOUNT: ${MAKSCORE_HIGH_TICKET_AMOUNT:-50000}
+
+      # ── Resiliência ──────────────────────────────────────────────────────
+      MAKSCORE_HTTP_TIMEOUT_MS: ${MAKSCORE_HTTP_TIMEOUT_MS:-8000}
+      MAKSCORE_RATE_LIMIT_PER_MIN: ${MAKSCORE_RATE_LIMIT_PER_MIN:-20}
+
+      # Pepper para hash CNPJ — definir na aba Env do Portainer
+      MAKSCORE_CNPJ_PEPPER: ${MAKSCORE_CNPJ_PEPPER}
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/makscore/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    # Limites de recurso — ajustar conforme VPS
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  default:
+    name: hub-vendas-net
