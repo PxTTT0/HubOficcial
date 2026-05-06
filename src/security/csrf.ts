@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import type { NextFunction, Request, Response } from "express";
+import { buildAuditContext, type SecurityAuditSink } from "./audit";
 import type { SecurityConfig } from "./config";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -74,7 +75,20 @@ function originAllowed(origin: string, cfg: SecurityConfig): boolean {
  * - Tambem rejeita request com Origin/Referer presentes que nao estejam
  *   na allowlist `trustedOrigins` (defesa contra login-CSRF).
  */
-export function applyCsrf(cfg: SecurityConfig) {
+export function applyCsrf(cfg: SecurityConfig, audit?: SecurityAuditSink) {
+  function record(req: Request, type: string, details?: Record<string, unknown>): void {
+    if (!audit) return;
+    audit.write({
+      ts: new Date().toISOString(),
+      scope: "auth.csrf",
+      type,
+      severity: "warn",
+      outcome: "failure",
+      ...buildAuditContext(req),
+      ...(details ? { details } : {}),
+    });
+  }
+
   return (req: Request, res: Response, next: NextFunction): void => {
     if (SAFE_METHODS.has(req.method.toUpperCase())) {
       next();
@@ -83,6 +97,7 @@ export function applyCsrf(cfg: SecurityConfig) {
 
     const origin = req.header("origin");
     if (origin && !originAllowed(origin, cfg)) {
+      record(req, "csrf.origin_blocked", { origin });
       res.status(403).json({ error: "csrf_origin_invalid" });
       return;
     }
@@ -97,12 +112,14 @@ export function applyCsrf(cfg: SecurityConfig) {
 
     const headerToken = req.header("x-csrf-token");
     if (!headerToken) {
+      record(req, "csrf.token_missing");
       res.status(403).json({ error: "csrf_token_missing" });
       return;
     }
 
     const expected = computeCsrfToken(cfg, sid);
     if (!safeEqual(expected, headerToken)) {
+      record(req, "csrf.token_invalid");
       res.status(403).json({ error: "csrf_token_invalid" });
       return;
     }

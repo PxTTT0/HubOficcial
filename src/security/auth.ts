@@ -2,6 +2,13 @@ import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { Router } from "express";
 import type { NextFunction, Request, Response } from "express";
 import type { AuthenticatedUser, Role } from "../modules/makscore/auth";
+import {
+  JsonlSecurityAuditSink,
+  buildAuditContext,
+  loadSecurityAuditConfig,
+  type SecurityAuditEvent,
+  type SecurityAuditSink,
+} from "./audit";
 import { loadSecurityConfig, type SecurityConfig } from "./config";
 import {
   clearCsrfCookieAttributes,
@@ -35,6 +42,7 @@ export interface SecurityContext {
   passwordCfg: PasswordHashingConfig;
   users: UserRepository;
   mfa: MfaService;
+  audit: SecurityAuditSink;
   requireAuth: (req: Request, res: Response, next: NextFunction) => void;
   requireRole: (...allowed: Role[]) => (req: Request, res: Response, next: NextFunction) => void;
   canSeeTechnicalDetails: (role: Role | undefined) => boolean;
@@ -99,9 +107,14 @@ export function createSecurityContext(
   cfg: SecurityConfig = loadSecurityConfig(),
   users: UserRepository = new InMemoryUserRepository(),
   passwordCfg: PasswordHashingConfig = loadPasswordHashingConfig(),
+  audit: SecurityAuditSink = new JsonlSecurityAuditSink(loadSecurityAuditConfig()),
 ): SecurityContext {
   const sessions = new Map<string, SessionRecord>();
   const mfa = new MfaService(cfg, users);
+
+  function recordEvent(event: Omit<SecurityAuditEvent, "ts">): void {
+    audit.write({ ts: new Date().toISOString(), ...event });
+  }
   const userLimiter = new FixedWindowRateLimiter(cfg.userRateLimitPerMin, 60_000);
   const ipLimiter = new FixedWindowRateLimiter(cfg.ipRateLimitPerMin, 60_000);
   const loginLimiter = new FixedWindowRateLimiter(cfg.authRateLimitPerMin, 60_000);
@@ -175,12 +188,39 @@ export function createSecurityContext(
     }
     if (cfg.sessionIdleMs > 0 && now - session.lastSeenAtMs > cfg.sessionIdleMs) {
       sessions.delete(sid);
+      recordEvent({
+        scope: "auth.session",
+        type: "session.idle_expired",
+        severity: "info",
+        outcome: "failure",
+        ...buildAuditContext(req, {
+          userId: session.userId,
+          username: session.username,
+          role: session.role,
+        }),
+        details: {
+          inactiveMs: now - session.lastSeenAtMs,
+          idleLimitMs: cfg.sessionIdleMs,
+        },
+      });
       return null;
     }
     if (cfg.sessionBindIpRoles.includes(session.role)) {
       const currentIp = getClientIp(req);
       if (session.ip !== currentIp) {
         sessions.delete(sid);
+        recordEvent({
+          scope: "auth.session",
+          type: "session.ip_mismatch",
+          severity: "high",
+          outcome: "failure",
+          ...buildAuditContext(req, {
+            userId: session.userId,
+            username: session.username,
+            role: session.role,
+          }),
+          details: { sessionIp: session.ip, currentIp },
+        });
         return null;
       }
     }
@@ -316,6 +356,14 @@ export function createSecurityContext(
     const requestWindow = loginLimiter.check(`login:${ip}`);
     attachRateLimitHeaders(res, "X-RateLimit-Login", requestWindow.remaining, requestWindow.resetAtMs);
     if (!requestWindow.ok) {
+      recordEvent({
+        scope: "auth",
+        type: "login.failure",
+        severity: "warn",
+        outcome: "failure",
+        reason: "rate_limited",
+        ...buildAuditContext(req),
+      });
       rejectRateLimited(res, requestWindow.retryAfterSec);
       return;
     }
@@ -323,6 +371,14 @@ export function createSecurityContext(
     const failureKey = `login-failure:${ip}`;
     const throttleWindow = loginFailureLimiter.peek(failureKey);
     if (!throttleWindow.ok) {
+      recordEvent({
+        scope: "auth",
+        type: "login.failure",
+        severity: "high",
+        outcome: "failure",
+        reason: "ip_locked_out",
+        ...buildAuditContext(req),
+      });
       rejectRateLimited(res, throttleWindow.retryAfterSec);
       return;
     }
@@ -339,6 +395,15 @@ export function createSecurityContext(
     const user = users.findByUsername(username);
     if (!user || user.disabled) {
       loginFailureLimiter.check(failureKey);
+      recordEvent({
+        scope: "auth",
+        type: "login.failure",
+        severity: "warn",
+        outcome: "failure",
+        reason: user ? "user_disabled" : "unknown_user",
+        ...buildAuditContext(req),
+        details: { username },
+      });
       res.status(401).json({ error: "invalid_credentials" });
       return;
     }
@@ -346,12 +411,26 @@ export function createSecurityContext(
     const valid = await verifyPassword(user.passwordHash, password);
     if (!valid) {
       loginFailureLimiter.check(failureKey);
+      recordEvent({
+        scope: "auth",
+        type: "login.failure",
+        severity: "warn",
+        outcome: "failure",
+        reason: "bad_password",
+        ...buildAuditContext(req, { userId: user.id, username: user.username, role: user.role }),
+      });
       res.status(401).json({ error: "invalid_credentials" });
       return;
     }
 
     if (user.mfa.enabled) {
       const challenge = mfa.issueChallenge(user.id);
+      recordEvent({
+        scope: "auth.mfa",
+        type: "login.mfa.challenge_issued",
+        severity: "info",
+        ...buildAuditContext(req, { userId: user.id, username: user.username, role: user.role }),
+      });
       res.status(200).json({
         mfaRequired: true,
         challengeToken: challenge.token,
@@ -364,6 +443,14 @@ export function createSecurityContext(
     const session = issueSession(user, ip, { enrollmentPending });
     const payload = buildSessionPayload(session, user, { enrollmentPending });
     setSessionCookies(res, session, payload.token, payload.csrfToken);
+    recordEvent({
+      scope: "auth",
+      type: "login.success",
+      severity: "info",
+      outcome: "success",
+      ...buildAuditContext(req, { userId: user.id, username: user.username, role: user.role }),
+      details: { enrollmentPending },
+    });
     res.status(200).json(payload);
   });
 
@@ -372,6 +459,14 @@ export function createSecurityContext(
     const ipWindow = mfaIpLimiter.check(`mfa:${ip}`);
     attachRateLimitHeaders(res, "X-RateLimit-MFA", ipWindow.remaining, ipWindow.resetAtMs);
     if (!ipWindow.ok) {
+      recordEvent({
+        scope: "auth.mfa",
+        type: "login.mfa.failure",
+        severity: "warn",
+        outcome: "failure",
+        reason: "rate_limited",
+        ...buildAuditContext(req),
+      });
       rejectRateLimited(res, ipWindow.retryAfterSec);
       return;
     }
@@ -388,6 +483,14 @@ export function createSecurityContext(
 
     const resolved = mfa.resolveChallenge(challengeToken);
     if (!resolved) {
+      recordEvent({
+        scope: "auth.mfa",
+        type: "login.mfa.failure",
+        severity: "warn",
+        outcome: "failure",
+        reason: "invalid_challenge",
+        ...buildAuditContext(req),
+      });
       res.status(401).json({ error: "invalid_challenge" });
       return;
     }
@@ -395,6 +498,14 @@ export function createSecurityContext(
     const failureKey = `mfa-failure:${resolved.userId}`;
     const failureWindow = mfaFailureLimiter.peek(failureKey);
     if (!failureWindow.ok) {
+      recordEvent({
+        scope: "auth.mfa",
+        type: "login.mfa.failure",
+        severity: "high",
+        outcome: "failure",
+        reason: "user_locked_out",
+        ...buildAuditContext(req, { userId: resolved.userId }),
+      });
       rejectRateLimited(res, failureWindow.retryAfterSec);
       return;
     }
@@ -404,6 +515,14 @@ export function createSecurityContext(
       : mfa.verifyTotp(resolved.userId, code);
     if (!ok) {
       mfaFailureLimiter.check(failureKey);
+      recordEvent({
+        scope: "auth.mfa",
+        type: "login.mfa.failure",
+        severity: "warn",
+        outcome: "failure",
+        reason: useRecovery ? "invalid_recovery_code" : "invalid_totp",
+        ...buildAuditContext(req, { userId: resolved.userId }),
+      });
       res.status(401).json({ error: "invalid_code" });
       return;
     }
@@ -423,6 +542,14 @@ export function createSecurityContext(
     const session = issueSession(user, ip);
     const payload = buildSessionPayload(session, user);
     setSessionCookies(res, session, payload.token, payload.csrfToken);
+    recordEvent({
+      scope: "auth.mfa",
+      type: "login.mfa.success",
+      severity: "info",
+      outcome: "success",
+      ...buildAuditContext(req, { userId: user.id, username: user.username, role: user.role }),
+      details: { recovery: useRecovery },
+    });
     res.status(200).json(payload);
   });
 
@@ -446,6 +573,13 @@ export function createSecurityContext(
       `${cfg.sessionCookieName}=; ${clearCookieAttributes(cfg)}`,
       `${cfg.csrfCookieName}=; ${clearCsrfCookieAttributes(cfg)}`,
     ]);
+    recordEvent({
+      scope: "auth",
+      type: "logout",
+      severity: "info",
+      outcome: "success",
+      ...buildAuditContext(req, req.user ? { userId: req.user.id, role: req.user.role } : undefined),
+    });
     res.status(204).end();
   });
 
@@ -476,6 +610,13 @@ export function createSecurityContext(
     }
     try {
       const result = mfa.beginEnrollment(user.id, user.username);
+      recordEvent({
+        scope: "auth.mfa",
+        type: "mfa.enroll.started",
+        severity: "info",
+        outcome: "success",
+        ...buildAuditContext(req, { userId: user.id, username: user.username, role: user.role }),
+      });
       res.status(200).json(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : "mfa_error";
@@ -507,6 +648,14 @@ export function createSecurityContext(
       const session = issueSession(user, ip);
       const payload = buildSessionPayload(session, user);
       setSessionCookies(res, session, payload.token, payload.csrfToken);
+      recordEvent({
+        scope: "auth.mfa",
+        type: "mfa.enroll.completed",
+        severity: "info",
+        outcome: "success",
+        ...buildAuditContext(req, { userId: user.id, username: user.username, role: user.role }),
+        details: { rotatedSid: true, recoveryCodeCount: result.recoveryCodes.length },
+      });
       res.status(200).json({ ...result, ...payload });
     } catch (err) {
       const message = err instanceof Error ? err.message : "mfa_error";
@@ -516,6 +665,14 @@ export function createSecurityContext(
           : message === "mfa_already_enabled"
             ? 409
             : 400;
+      recordEvent({
+        scope: "auth.mfa",
+        type: "mfa.enroll.failure",
+        severity: "warn",
+        outcome: "failure",
+        reason: message,
+        ...buildAuditContext(req, { userId: user.id, username: user.username, role: user.role }),
+      });
       res.status(status).json({ error: message });
     }
   });
@@ -535,15 +692,48 @@ export function createSecurityContext(
     }
     const passwordOk = await verifyPassword(user.passwordHash, password);
     if (!passwordOk) {
+      recordEvent({
+        scope: "auth.mfa",
+        type: "mfa.disable.failure",
+        severity: "warn",
+        outcome: "failure",
+        reason: "bad_password",
+        ...buildAuditContext(req, { userId: user.id, username: user.username, role: user.role }),
+      });
       res.status(401).json({ error: "invalid_credentials" });
       return;
     }
     if (!user.mfa.enabled || !mfa.verifyTotp(user.id, code)) {
+      recordEvent({
+        scope: "auth.mfa",
+        type: "mfa.disable.failure",
+        severity: "warn",
+        outcome: "failure",
+        reason: "invalid_totp",
+        ...buildAuditContext(req, { userId: user.id, username: user.username, role: user.role }),
+      });
       res.status(401).json({ error: "invalid_code" });
       return;
     }
     mfa.disable(user.id);
+    recordEvent({
+      scope: "auth.mfa",
+      type: "mfa.disabled",
+      severity: "high",
+      outcome: "success",
+      ...buildAuditContext(req, { userId: user.id, username: user.username, role: user.role }),
+    });
     res.status(204).end();
+  });
+
+  authRouter.get("/audit/recent", requireAuth, requireRole("admin"), (req, res) => {
+    const limitRaw = req.query.limit;
+    const parsedLimit =
+      typeof limitRaw === "string" ? Number.parseInt(limitRaw, 10) : 100;
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0
+      ? Math.min(parsedLimit, 500)
+      : 100;
+    res.json({ events: audit.recent(limit) });
   });
 
   return {
@@ -551,6 +741,7 @@ export function createSecurityContext(
     passwordCfg,
     users,
     mfa,
+    audit,
     requireAuth,
     requireRole,
     canSeeTechnicalDetails,

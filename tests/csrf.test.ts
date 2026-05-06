@@ -72,6 +72,7 @@ test(
     const passwordHash = await fastHash("SenhaForte123!");
     const server = await startServer({
       NODE_ENV: "test",
+      AUDIT_LOG_PATH: "",
       MAKSCORE_EPOSI_MODE: "mock",
       AUTH_SESSION_SECRET: "csrf-test-1",
       AUTH_ALLOW_DEV_HEADER_AUTH: "false",
@@ -153,6 +154,7 @@ test(
     const passwordHash = await fastHash("SenhaForte123!");
     const server = await startServer({
       NODE_ENV: "test",
+      AUDIT_LOG_PATH: "",
       MAKSCORE_EPOSI_MODE: "mock",
       AUTH_SESSION_SECRET: "csrf-test-2",
       AUTH_ALLOW_DEV_HEADER_AUTH: "false",
@@ -189,6 +191,7 @@ test(
     const passwordHash = await fastHash("SenhaForte123!");
     const server = await startServer({
       NODE_ENV: "test",
+      AUDIT_LOG_PATH: "",
       MAKSCORE_EPOSI_MODE: "mock",
       AUTH_SESSION_SECRET: "idle-test",
       AUTH_ALLOW_DEV_HEADER_AUTH: "false",
@@ -237,6 +240,7 @@ test(
     const adminHash = await fastHash("AdminForte123!");
     const server = await startServer({
       NODE_ENV: "test",
+      AUDIT_LOG_PATH: "",
       MAKSCORE_EPOSI_MODE: "mock",
       AUTH_SESSION_SECRET: "ip-bind-test",
       AUTH_ALLOW_DEV_HEADER_AUTH: "false",

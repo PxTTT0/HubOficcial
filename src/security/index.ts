@@ -1,5 +1,12 @@
 export { createSecurityContext } from "./auth";
 export type { SecurityContext } from "./auth";
+export {
+  JsonlSecurityAuditSink,
+  loadSecurityAuditConfig,
+  type SecurityAuditConfig,
+  type SecurityAuditEvent,
+  type SecurityAuditSink,
+} from "./audit";
 export { loadSecurityConfig, type SecurityConfig } from "./config";
 export { applyCsrf, computeCsrfToken } from "./csrf";
 export { applyCors, applySecurityHeaders } from "./http";

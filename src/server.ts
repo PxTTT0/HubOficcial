@@ -16,7 +16,7 @@ export function buildApp() {
   app.use(applySecurityHeaders(security.cfg));
   app.use(applyCors(security.cfg));
   app.use(express.json({ limit: "16kb" }));
-  app.use(applyCsrf(security.cfg));
+  app.use(applyCsrf(security.cfg, security.audit));
 
   const makscore = createMakScoreModule(security);
   app.use("/api/auth", security.authRouter);

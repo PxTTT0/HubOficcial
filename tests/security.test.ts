@@ -57,6 +57,7 @@ test("login cria sessao assinada e rotas protegidas exigem autenticacao real", {
   });
   const server = await startServer({
     NODE_ENV: "test",
+    AUDIT_LOG_PATH: "",
     MAKSCORE_EPOSI_MODE: "mock",
     AUTH_SESSION_SECRET: "test-session-secret",
     AUTH_ALLOW_DEV_HEADER_AUTH: "false",
@@ -134,6 +135,7 @@ test("rate limits bloqueiam login e consultas repetidas", { concurrency: false }
   });
   const server = await startServer({
     NODE_ENV: "test",
+    AUDIT_LOG_PATH: "",
     MAKSCORE_EPOSI_MODE: "mock",
     MAKSCORE_RATE_LIMIT_PER_MIN: "1",
     AUTH_SESSION_SECRET: "rate-limit-secret",

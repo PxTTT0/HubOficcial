@@ -39,6 +39,7 @@ test(
     const adminHash = await fastHash("AdminForte123!");
     const server = await startServer({
       NODE_ENV: "test",
+      AUDIT_LOG_PATH: "",
       MAKSCORE_EPOSI_MODE: "mock",
       AUTH_SESSION_SECRET: "mfa-flow-secret",
       AUTH_ALLOW_DEV_HEADER_AUTH: "false",
@@ -217,6 +218,7 @@ test(
     const sellerHash = await fastHash("SenhaForte123!");
     const server = await startServer({
       NODE_ENV: "test",
+      AUDIT_LOG_PATH: "",
       MAKSCORE_EPOSI_MODE: "mock",
       AUTH_SESSION_SECRET: "mfa-not-required-secret",
       AUTH_ALLOW_DEV_HEADER_AUTH: "false",
@@ -251,6 +253,7 @@ test(
     const adminHash = await fastHash("AdminForte123!");
     const server = await startServer({
       NODE_ENV: "test",
+      AUDIT_LOG_PATH: "",
       MAKSCORE_EPOSI_MODE: "mock",
       AUTH_SESSION_SECRET: "mfa-challenge-secret",
       AUTH_ALLOW_DEV_HEADER_AUTH: "false",
