@@ -3,6 +3,11 @@ import { Router } from "express";
 import type { NextFunction, Request, Response } from "express";
 import type { AuthenticatedUser, Role } from "../modules/makscore/auth";
 import { loadSecurityConfig, type SecurityConfig } from "./config";
+import {
+  clearCsrfCookieAttributes,
+  computeCsrfToken,
+  csrfCookieAttributes,
+} from "./csrf";
 import { getClientIp } from "./http";
 import { MfaService } from "./mfa";
 import { loadPasswordHashingConfig, verifyPassword, type PasswordHashingConfig } from "./password";
@@ -156,18 +161,30 @@ export function createSecurityContext(
     if (!Number.isFinite(exp)) return null;
     const expectedSig = signToken(cfg, sid, exp);
     if (!safeEqual(expectedSig, parts[2])) return null;
-    if (Date.now() >= exp) {
+    const now = Date.now();
+    if (now >= exp) {
       sessions.delete(sid);
       return null;
     }
 
     const session = sessions.get(sid);
     if (!session || session.expiresAtMs !== exp) return null;
-    if (session.expiresAtMs <= Date.now()) {
+    if (session.expiresAtMs <= now) {
       sessions.delete(sid);
       return null;
     }
-    session.lastSeenAtMs = Date.now();
+    if (cfg.sessionIdleMs > 0 && now - session.lastSeenAtMs > cfg.sessionIdleMs) {
+      sessions.delete(sid);
+      return null;
+    }
+    if (cfg.sessionBindIpRoles.includes(session.role)) {
+      const currentIp = getClientIp(req);
+      if (session.ip !== currentIp) {
+        sessions.delete(sid);
+        return null;
+      }
+    }
+    session.lastSeenAtMs = now;
     return session;
   }
 
@@ -269,11 +286,23 @@ export function createSecurityContext(
     return role === "analista" || role === "admin";
   }
 
-  function setSessionCookie(res: Response, session: SessionRecord, token: string): void {
-    res.setHeader(
-      "Set-Cookie",
+  function setSessionCookies(res: Response, session: SessionRecord, token: string, csrfToken: string): void {
+    res.setHeader("Set-Cookie", [
       `${cfg.sessionCookieName}=${encodeURIComponent(token)}; ${cookieAttributes(cfg, session.expiresAtMs)}`,
-    );
+      `${cfg.csrfCookieName}=${encodeURIComponent(csrfToken)}; ${csrfCookieAttributes(cfg, session.expiresAtMs)}`,
+    ]);
+  }
+
+  function buildSessionPayload(session: SessionRecord, user: StoredUser, options: { enrollmentPending?: boolean } = {}) {
+    const token = encodeSessionToken(session);
+    const csrfToken = computeCsrfToken(cfg, session.sid);
+    return {
+      token,
+      csrfToken,
+      user: sanitizeUser(user),
+      expiresAt: new Date(session.expiresAtMs).toISOString(),
+      ...(options.enrollmentPending ? { mfaEnrollmentPending: true } : {}),
+    };
   }
 
   function findSessionByRequest(req: Request): SessionRecord | null {
@@ -333,14 +362,9 @@ export function createSecurityContext(
 
     const enrollmentPending = mfa.isRequiredForRole(user.role) && !user.mfa.enabled;
     const session = issueSession(user, ip, { enrollmentPending });
-    const token = encodeSessionToken(session);
-    setSessionCookie(res, session, token);
-    res.status(200).json({
-      token,
-      user: sanitizeUser(user),
-      expiresAt: new Date(session.expiresAtMs).toISOString(),
-      ...(enrollmentPending ? { mfaEnrollmentPending: true } : {}),
-    });
+    const payload = buildSessionPayload(session, user, { enrollmentPending });
+    setSessionCookies(res, session, payload.token, payload.csrfToken);
+    res.status(200).json(payload);
   });
 
   authRouter.post("/login/mfa", (req, res) => {
@@ -397,13 +421,9 @@ export function createSecurityContext(
     }
 
     const session = issueSession(user, ip);
-    const token = encodeSessionToken(session);
-    setSessionCookie(res, session, token);
-    res.status(200).json({
-      token,
-      user: sanitizeUser(user),
-      expiresAt: new Date(session.expiresAtMs).toISOString(),
-    });
+    const payload = buildSessionPayload(session, user);
+    setSessionCookies(res, session, payload.token, payload.csrfToken);
+    res.status(200).json(payload);
   });
 
   authRouter.post("/logout", requireAuthAllowingEnrollment, (req, res) => {
@@ -422,7 +442,10 @@ export function createSecurityContext(
         }
       }
     }
-    res.setHeader("Set-Cookie", `${cfg.sessionCookieName}=; ${clearCookieAttributes(cfg)}`);
+    res.setHeader("Set-Cookie", [
+      `${cfg.sessionCookieName}=; ${clearCookieAttributes(cfg)}`,
+      `${cfg.csrfCookieName}=; ${clearCsrfCookieAttributes(cfg)}`,
+    ]);
     res.status(204).end();
   });
 
@@ -435,6 +458,7 @@ export function createSecurityContext(
     const session = findSessionByRequest(req);
     res.json({
       user: sanitizeUser(user),
+      csrfToken: session ? computeCsrfToken(cfg, session.sid) : null,
       mfa: {
         enabled: user.mfa.enabled,
         required: mfa.isRequiredForRole(user.role),
@@ -474,11 +498,16 @@ export function createSecurityContext(
     }
     try {
       const result = mfa.confirmEnrollment(user.id, code);
-      const session = findSessionByRequest(req);
-      if (session) {
-        session.enrollmentPending = false;
-      }
-      res.status(200).json(result);
+      // Rotaciona o sid: invalida a sessao "enrollmentPending" e emite uma nova
+      // sessao plena, evitando que o token original (visto durante o estado
+      // pre-MFA) continue valido apos a elevacao de privilegio.
+      const previous = findSessionByRequest(req);
+      if (previous) sessions.delete(previous.sid);
+      const ip = getClientIp(req);
+      const session = issueSession(user, ip);
+      const payload = buildSessionPayload(session, user);
+      setSessionCookies(res, session, payload.token, payload.csrfToken);
+      res.status(200).json({ ...result, ...payload });
     } catch (err) {
       const message = err instanceof Error ? err.message : "mfa_error";
       const status =

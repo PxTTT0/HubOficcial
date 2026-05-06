@@ -3,6 +3,7 @@ import path from "path";
 import { createMakScoreModule } from "./modules/makscore";
 import {
   applyCors,
+  applyCsrf,
   applySecurityHeaders,
   createSecurityContext,
 } from "./security";
@@ -15,6 +16,7 @@ export function buildApp() {
   app.use(applySecurityHeaders(security.cfg));
   app.use(applyCors(security.cfg));
   app.use(express.json({ limit: "16kb" }));
+  app.use(applyCsrf(security.cfg));
 
   const makscore = createMakScoreModule(security);
   app.use("/api/auth", security.authRouter);

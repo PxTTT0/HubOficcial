@@ -29,6 +29,9 @@ export interface SecurityConfig {
   sessionSecret: string;
   sessionCookieName: string;
   sessionTtlMs: number;
+  sessionIdleMs: number;
+  sessionBindIpRoles: Role[];
+  csrfCookieName: string;
   secureCookies: boolean;
   trustedOrigins: string[];
   trustProxy: boolean;
@@ -54,6 +57,12 @@ export function loadSecurityConfig(): SecurityConfig {
     sessionSecret: process.env.AUTH_SESSION_SECRET ?? "dev-insecure-session-secret-change-me",
     sessionCookieName: process.env.AUTH_SESSION_COOKIE_NAME ?? "hub_sid",
     sessionTtlMs: num(process.env.AUTH_SESSION_TTL_MS, 12 * 60 * 60 * 1000),
+    sessionIdleMs: num(process.env.AUTH_SESSION_IDLE_MS, 30 * 60 * 1000),
+    sessionBindIpRoles: roleList(
+      process.env.AUTH_SESSION_BIND_IP_ROLES,
+      envName === "production" ? ["admin", "analista"] : [],
+    ),
+    csrfCookieName: process.env.AUTH_CSRF_COOKIE_NAME ?? "hub_csrf",
     secureCookies: bool(process.env.AUTH_SECURE_COOKIES, envName === "production"),
     trustedOrigins: list(process.env.AUTH_TRUSTED_ORIGINS),
     trustProxy: bool(process.env.AUTH_TRUST_PROXY, true),

@@ -90,13 +90,26 @@ test(
         body: JSON.stringify({ code }),
       });
       assert.equal(verify.status, 200);
-      const verifyBody = (await verify.json()) as { recoveryCodes: string[] };
+      const verifyBody = (await verify.json()) as {
+        recoveryCodes: string[];
+        token: string;
+        csrfToken: string;
+      };
       assert.equal(verifyBody.recoveryCodes.length, 10);
       assert.ok(verifyBody.recoveryCodes.every((c) => /^[0-9A-Z]+(-[0-9A-Z]+){2}$/.test(c)));
+      assert.notEqual(verifyBody.token, pendingToken);
+      assert.equal(typeof verifyBody.csrfToken, "string");
+      const upgradedToken = verifyBody.token;
 
-      // Apos enrollment, /me reporta mfa.enabled=true e a mesma sessao fica utilizavel.
-      const meAfter = await fetch(`${server.baseUrl}/api/auth/me`, {
+      // Token antigo (enrollmentPending) foi invalidado pela rotacao do sid.
+      const stale = await fetch(`${server.baseUrl}/api/auth/me`, {
         headers: { authorization: `Bearer ${pendingToken}` },
+      });
+      assert.equal(stale.status, 401);
+
+      // Token novo reflete mfa habilitado e enrollment concluido.
+      const meAfter = await fetch(`${server.baseUrl}/api/auth/me`, {
+        headers: { authorization: `Bearer ${upgradedToken}` },
       });
       assert.equal(meAfter.status, 200);
       const meBody = (await meAfter.json()) as {
@@ -109,7 +122,7 @@ test(
       // Logout invalida a sessao corrente.
       const logout = await fetch(`${server.baseUrl}/api/auth/logout`, {
         method: "POST",
-        headers: { authorization: `Bearer ${pendingToken}` },
+        headers: { authorization: `Bearer ${upgradedToken}` },
       });
       assert.equal(logout.status, 204);
 
