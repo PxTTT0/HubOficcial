@@ -78,7 +78,7 @@ test(
       await fetch(`${server.baseUrl}/api/auth/login`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ username: "seller", password: "ErradoErrado1" }),
+        body: JSON.stringify({ username: "seller", password: "ErradoErrado1!" }),
       });
       // login OK
       const ok = await fetch(`${server.baseUrl}/api/auth/login`, {
@@ -113,7 +113,7 @@ test(
       for (const ev of events) {
         const serialized = JSON.stringify(ev);
         assert.equal(serialized.includes("SenhaForte123!"), false);
-        assert.equal(serialized.includes("ErradoErrado1"), false);
+        assert.equal(serialized.includes("ErradoErrado1!"), false);
       }
     } finally {
       fs.rmSync(path.dirname(auditPath), { recursive: true, force: true });

@@ -6,11 +6,25 @@ import {
   applyCsrf,
   applySecurityHeaders,
   createSecurityContext,
+  loadSecurityAuditConfig,
 } from "./security";
+import { validateProductionEnvironment } from "./security/bootstrap";
 
 export function buildApp() {
   const app = express();
   const security = createSecurityContext();
+  const makscore = createMakScoreModule(security);
+  validateProductionEnvironment({
+    envName: security.cfg.envName,
+    security: security.cfg,
+    audit: {
+      ...loadSecurityAuditConfig(),
+      configured:
+        process.env.AUDIT_LOG_PATH !== undefined &&
+        process.env.AUDIT_LOG_PATH.trim().length > 0,
+    },
+    makscore: { cnpjPepper: process.env.MAKSCORE_CNPJ_PEPPER ?? "" },
+  });
   app.disable("x-powered-by");
   app.set("trust proxy", security.cfg.trustProxy);
   app.use(applySecurityHeaders(security.cfg));
@@ -18,7 +32,10 @@ export function buildApp() {
   app.use(express.json({ limit: "16kb" }));
   app.use(applyCsrf(security.cfg, security.audit));
 
-  const makscore = createMakScoreModule(security);
+  app.get("/healthz", (_req, res) => {
+    res.json({ ok: true });
+  });
+
   app.use("/api/auth", security.authRouter);
   app.use("/api/makscore", makscore.router);
 

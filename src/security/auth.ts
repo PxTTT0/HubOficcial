@@ -18,6 +18,7 @@ import {
 import { getClientIp } from "./http";
 import { MfaService } from "./mfa";
 import { loadPasswordHashingConfig, verifyPassword, type PasswordHashingConfig } from "./password";
+import { validatePasswordPolicy } from "./passwordPolicy";
 import { FixedWindowRateLimiter } from "./rateLimit";
 import {
   InMemoryUserRepository,
@@ -315,6 +316,15 @@ export function createSecurityContext(
         return;
       }
       if (!allowed.includes(req.user.role)) {
+        recordEvent({
+          scope: "auth",
+          type: "rbac.denied",
+          severity: "warn",
+          outcome: "failure",
+          reason: "role_not_allowed",
+          ...buildAuditContext(req, { userId: req.user.id, role: req.user.role }),
+          details: { allowedRoles: allowed, actualRole: req.user.role },
+        });
         res.status(403).json({ error: "forbidden" });
         return;
       }
@@ -387,7 +397,7 @@ export function createSecurityContext(
       ? req.body.username.trim().toLowerCase()
       : "";
     const password = typeof req.body?.password === "string" ? req.body.password : "";
-    if (!username || password.length < 8) {
+    if (!username || !validatePasswordPolicy(password).ok) {
       res.status(400).json({ error: "invalid_credentials" });
       return;
     }
@@ -686,7 +696,7 @@ export function createSecurityContext(
     }
     const password = typeof req.body?.password === "string" ? req.body.password : "";
     const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
-    if (password.length < 8 || !code) {
+    if (!validatePasswordPolicy(password).ok || !code) {
       res.status(400).json({ error: "invalid_input" });
       return;
     }

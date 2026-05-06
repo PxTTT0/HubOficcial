@@ -1,0 +1,94 @@
+import type { SecurityAuditConfig } from "./audit";
+import type { SecurityConfig } from "./config";
+
+const DEV_SESSION_SECRET = "dev-insecure-session-secret-change-me";
+const MIN_SESSION_SECRET_BYTES = 32;
+
+export class ProductionSecurityError extends Error {
+  constructor(public readonly issues: string[]) {
+    super(
+      "Producao recusou subir por configuracao de seguranca insuficiente:\n  - " +
+        issues.join("\n  - "),
+    );
+    this.name = "ProductionSecurityError";
+  }
+}
+
+export interface ProductionEnvironment {
+  envName: string;
+  security: SecurityConfig;
+  audit: SecurityAuditConfig & { configured?: boolean };
+  makscore: { cnpjPepper: string };
+}
+
+/**
+ * Em NODE_ENV=production, exige que toda a configuracao critica de
+ * seguranca esteja presente e nao apresente valores-default ou inseguros.
+ *
+ * Estrategia: agregar TODOS os problemas em uma unica excecao para o
+ * operador conseguir corrigir tudo de uma vez, em vez de empilhar deploys
+ * com falha + correcao + falha + correcao.
+ *
+ * Em ambientes != production, retorna sem validar nada (dev/test ficam
+ * livres para usar defaults inseguros, intencional).
+ */
+export function validateProductionEnvironment(env: ProductionEnvironment): void {
+  if (env.envName !== "production") return;
+
+  const issues: string[] = [];
+
+  // AUTH_SESSION_SECRET tem que ser longo e nao pode ser o default de dev.
+  if (!env.security.sessionSecret) {
+    issues.push("AUTH_SESSION_SECRET nao definido");
+  } else if (env.security.sessionSecret === DEV_SESSION_SECRET) {
+    issues.push(
+      "AUTH_SESSION_SECRET ainda esta usando o default de dev - gerar um segredo aleatorio com pelo menos 32 bytes",
+    );
+  } else if (env.security.sessionSecret.length < MIN_SESSION_SECRET_BYTES) {
+    issues.push(
+      `AUTH_SESSION_SECRET tem apenas ${env.security.sessionSecret.length} caracteres - exigido minimo de ${MIN_SESSION_SECRET_BYTES}`,
+    );
+  } else if (/^dev[-_]/i.test(env.security.sessionSecret)) {
+    issues.push("AUTH_SESSION_SECRET parece ser um placeholder de dev (prefixo 'dev-')");
+  }
+
+  // Cookies em producao precisam de Secure (TLS obrigatorio entre cliente e proxy).
+  if (!env.security.secureCookies) {
+    issues.push("AUTH_SECURE_COOKIES tem que ser true em producao");
+  }
+
+  // CORS allowlist tem que existir em producao para o middleware CSRF/origin
+  // bloquear requisicoes mutaveis de origens nao confiaveis.
+  if (env.security.trustedOrigins.length === 0) {
+    issues.push(
+      "AUTH_TRUSTED_ORIGINS esta vazio - listar todos os dominios do front, ex: https://hub.makfil.com.br",
+    );
+  }
+
+  // Dev header auth nunca deve subir em producao - tratado tambem em config.ts
+  // que forca para false; checagem extra protege contra bypass via outras rotas.
+  if (env.security.allowDevHeaderAuth) {
+    issues.push(
+      "AUTH_ALLOW_DEV_HEADER_AUTH esta habilitado em producao - bypass de autenticacao via header",
+    );
+  }
+
+  // Auditoria persistente eh requisito operacional em producao.
+  if (env.audit.configured === false || !env.audit.filePath) {
+    issues.push(
+      "AUDIT_LOG_PATH nao configurado - eventos de seguranca nao seriam persistidos",
+    );
+  }
+
+  // Pepper do hash de CNPJ tem que existir, senao o repo guarda chaves
+  // dependentes apenas do CNPJ + secret default.
+  if (!env.makscore.cnpjPepper || env.makscore.cnpjPepper.trim().length === 0) {
+    issues.push(
+      "MAKSCORE_CNPJ_PEPPER nao configurado - hashes de CNPJ ficariam previsiveis",
+    );
+  }
+
+  if (issues.length > 0) {
+    throw new ProductionSecurityError(issues);
+  }
+}

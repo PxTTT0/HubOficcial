@@ -8,7 +8,8 @@ export type SecurityAuditScope =
   | "auth"
   | "auth.mfa"
   | "auth.session"
-  | "auth.csrf";
+  | "auth.csrf"
+  | "makscore";
 
 export type SecurityAuditSeverity = "info" | "warn" | "high";
 

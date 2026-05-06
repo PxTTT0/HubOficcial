@@ -40,6 +40,7 @@ npm run auth:hash -- "SenhaForte123!"
 - Rate limit por IP, por usuario e por rota sensivel.
 - Headers HTTP de endurecimento e CORS por allowlist (`AUTH_TRUSTED_ORIGINS`).
 - Bootstrap de usuarios via `AUTH_BOOTSTRAP_ADMIN_*` ou `AUTH_USERS_JSON`.
+- Contrato de seguranca para novos modulos em `docs/SECURITY.md`.
 
 ## Convencoes
 

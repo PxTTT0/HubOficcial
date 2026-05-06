@@ -6,6 +6,7 @@ import type { MakScoreConfig } from "./config";
 import { MakScoreInputError, type MakScoreService } from "./service";
 import type { MakScoreResult } from "./types";
 import type { SecurityContext } from "../../security";
+import { buildAuditContext } from "../../security/audit";
 import { FixedWindowRateLimiter } from "../../security/rateLimit";
 
 const QuerySchema = z.object({
@@ -53,6 +54,18 @@ export function buildMakScoreRouter(
     res.setHeader("X-RateLimit-MakScore-Reset", String(Math.ceil(rl.resetAtMs / 1000)));
     if (!rl.ok) {
       res.setHeader("Retry-After", String(rl.retryAfterSec));
+      security.audit.write({
+        ts: new Date().toISOString(),
+        scope: "makscore",
+        type: "query.rate_limited",
+        severity: "warn",
+        outcome: "failure",
+        reason: "rate_limited",
+        ...buildAuditContext(req, {
+          userId: req.user?.id,
+          role: req.user?.role,
+        }),
+      });
       res.status(429).json({ error: "rate_limited" });
       return;
     }

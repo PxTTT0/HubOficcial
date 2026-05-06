@@ -70,7 +70,10 @@ export function loadSecurityConfig(): SecurityConfig {
     ipRateLimitPerMin: num(process.env.AUTH_IP_RATE_LIMIT_PER_MIN, 120),
     authRateLimitPerMin: num(process.env.AUTH_LOGIN_RATE_LIMIT_PER_MIN, 10),
     authFailureLimitPer15Min: num(process.env.AUTH_LOGIN_FAILURE_LIMIT_PER_15_MIN, 25),
-    allowDevHeaderAuth: bool(process.env.AUTH_ALLOW_DEV_HEADER_AUTH, envName !== "production"),
+    allowDevHeaderAuth:
+      envName === "production"
+        ? false
+        : bool(process.env.AUTH_ALLOW_DEV_HEADER_AUTH, true),
     envName,
     mfaRequiredRoles: roleList(process.env.AUTH_MFA_REQUIRED_ROLES, defaultRequiredRoles),
     mfaIssuer: process.env.AUTH_MFA_ISSUER ?? "HubVendasMakfil",
