@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.env.local
+.env.production
+docker-compose.override.yml
+.claude/
+*.log
+.DS_Store
+
+# Diretorio de auditoria persistente (JSONL append-only)
+logs/

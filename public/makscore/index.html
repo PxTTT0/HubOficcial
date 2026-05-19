@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>MakScore</title>
+<style>
+  :root {
+    --bg: #0f172a; --card: #111827; --fg: #f1f5f9; --muted: #94a3b8;
+    --ok: #16a34a; --warn: #eab308; --bad: #dc2626; --info: #2563eb;
+    --border: #1f2937;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width: 540px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.25rem; margin: 8px 0 16px; letter-spacing: .3px; }
+  .card { background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
+  input, select, button {
+    width: 100%; padding: 12px 14px; border-radius: 10px;
+    border: 1px solid var(--border); background: #0b1220; color: var(--fg);
+    font-size: 1rem;
+  }
+  button { background: var(--info); border-color: var(--info); font-weight: 600;
+    margin-top: 12px; cursor: pointer; }
+  button[disabled] { opacity: .6; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .badge { display: inline-block; padding: 4px 10px; border-radius: 999px;
+    font-size: .8rem; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+  .badge.aprovado { background: rgba(22,163,74,.15); color: #4ade80; }
+  .badge.reprovado { background: rgba(220,38,38,.15); color: #f87171; }
+  .badge.exige_analise { background: rgba(234,179,8,.15); color: #facc15; }
+  .badge.indisponivel_temporariamente { background: rgba(37,99,235,.15); color: #60a5fa; }
+  .mock { background: rgba(234,179,8,.15); color: #facc15; padding: 6px 10px;
+    border-radius: 8px; font-size: .8rem; margin-bottom: 8px; }
+  .muted { color: var(--muted); font-size: .85rem; }
+  .kv { display: flex; justify-content: space-between; padding: 6px 0;
+    border-bottom: 1px dashed var(--border); }
+  .kv:last-child { border-bottom: 0; }
+  ul { padding-left: 18px; margin: 8px 0; }
+  .hide { display: none; }
+  .err { color: #f87171; }
+</style>
+</head>
+<body>
+<main>
+  <h1>MakScore</h1>
+
+  <div class="card">
+    <label for="cnpj">CNPJ</label>
+    <input id="cnpj" inputmode="numeric" autocomplete="off" placeholder="00.000.000/0000-00" />
+    <div class="row" style="margin-top:8px">
+      <div>
+        <label for="product">Produto</label>
+        <select id="product">
+          <option value="TOTAL_PJ" selected>TOTAL_PJ (padrao)</option>
+          <option value="COMPLETA_PJ">COMPLETA_PJ</option>
+        </select>
+      </div>
+      <div>
+        <label for="ticket">Ticket pretendido (R$)</label>
+        <input id="ticket" inputmode="decimal" placeholder="0,00" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div>
+        <label for="user">Usuario (DEV)</label>
+        <input id="user" value="interno-1" />
+      </div>
+      <div>
+        <label for="role">Perfil (DEV)</label>
+        <select id="role">
+          <option value="vendedor">interno</option>
+          <option value="analista" selected>analista</option>
+          <option value="admin">admin</option>
+        </select>
+      </div>
+    </div>
+    <button id="go">Consultar</button>
+    <div id="status" class="muted" style="margin-top:10px"></div>
+  </div>
+
+  <div id="result" class="card hide">
+    <div id="mockTag" class="mock hide">Resposta gerada por mock controlado (homologacao).</div>
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px">
+      <span id="outcome" class="badge"></span>
+      <span id="score" class="muted"></span>
+    </div>
+    <div id="action" style="margin-bottom:10px"></div>
+    <div class="kv"><span class="muted">CNPJ</span><span id="r-cnpj"></span></div>
+    <div class="kv"><span class="muted">Produto</span><span id="r-product"></span></div>
+    <div class="kv"><span class="muted">Razao Social</span><span id="r-razao"></span></div>
+    <div class="kv"><span class="muted">CNAE Principal</span><span id="r-cnae"></span></div>
+    <div class="kv"><span class="muted">Situacao</span><span id="r-status"></span></div>
+    <div class="kv"><span class="muted">Validade</span><span id="r-valid"></span></div>
+    <div style="margin-top:10px">
+      <div class="muted">Motivos</div>
+      <ul id="reasons"></ul>
+    </div>
+    <div id="tech" class="hide" style="margin-top:10px; border-top: 1px dashed var(--border); padding-top:10px">
+      <div class="muted">Detalhes tecnicos (analista/admin)</div>
+      <div class="kv"><span class="muted">Regra principal</span><span id="r-rule"></span></div>
+      <div class="kv"><span class="muted">ErrorCode</span><span id="r-err"></span></div>
+      <div class="kv"><span class="muted">ErrorMessage</span><span id="r-errmsg"></span></div>
+      <div class="kv"><span class="muted">Correlation</span><span id="r-corr"></span></div>
+    </div>
+  </div>
+
+  <p class="muted">
+    Backend e autoridade soberana. CNPJ, token E-POSI e payload bruto nao trafegam aqui.
+  </p>
+</main>
+
+<script>
+function maskCnpj(v) {
+  v = (v || "").replace(/\D/g, "").slice(0, 14);
+  return v
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d)/, ".$1/$2")
+    .replace(/(\d{4})(\d)/, "$1-$2");
+}
+const $ = (id) => document.getElementById(id);
+$("cnpj").addEventListener("input", (e) => {
+  e.target.value = maskCnpj(e.target.value);
+});
+
+function parseTicket(v) {
+  if (!v) return undefined;
+  const s = String(v).replace(/\./g, "").replace(",", ".").replace(/[^\d.]/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+async function run() {
+  const cnpj = $("cnpj").value.replace(/\D/g, "");
+  const product = $("product").value || undefined;
+  const userId = $("user").value || "interno-1";
+  const role = $("role").value || "analista";
+  const ticketPretendido = parseTicket($("ticket").value);
+  $("status").textContent = "Consultando...";
+  $("status").classList.remove("err");
+  $("result").classList.add("hide");
+  $("go").disabled = true;
+  try {
+    const res = await fetch("/api/makscore/query", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": userId,
+        "x-user-role": role,
+      },
+      body: JSON.stringify({ cnpj, product, ticketPretendido }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      $("status").textContent = "Erro: " + (data.error || res.status);
+      $("status").classList.add("err");
+      return;
+    }
+    render(data);
+    $("status").textContent = "";
+  } catch (e) {
+    $("status").textContent = "Falha de rede";
+    $("status").classList.add("err");
+  } finally {
+    $("go").disabled = false;
+  }
+}
+
+function render(d) {
+  $("result").classList.remove("hide");
+  const o = $("outcome");
+  o.className = "badge " + d.outcome;
+  o.textContent = d.outcome.replace(/_/g, " ");
+  $("score").textContent = d.score != null ? `Score: ${d.score}` : "Score: indisponivel";
+  $("action").textContent = d.recommendedAction || "";
+  $("r-cnpj").textContent = d.cnpj;
+  $("r-product").textContent = d.product;
+  $("r-razao").textContent = d.cadastral?.razaoSocial || "-";
+  $("r-cnae").textContent = d.cadastral?.cnaePrincipal || "-";
+  $("r-status").textContent = d.cadastral?.status || "-";
+  $("r-valid").textContent = d.validUntil ? new Date(d.validUntil).toLocaleString() : "-";
+  $("mockTag").classList.toggle("hide", !d.sourceIsMock);
+  const ul = $("reasons");
+  ul.innerHTML = "";
+  (d.reasons || []).forEach((r) => {
+    const li = document.createElement("li");
+    li.textContent = r.label + (r.critical ? " (critico)" : "");
+    ul.appendChild(li);
+  });
+  if (!ul.childElementCount) {
+    const li = document.createElement("li");
+    li.className = "muted";
+    li.textContent = "Sem motivos relevantes";
+    ul.appendChild(li);
+  }
+  // Detalhes tecnicos so aparecem se o backend retornou os campos
+  // (analista/admin). Vendedor/interno comum nao recebe esses campos.
+  const showTech = "primaryRule" in d || "errorCode" in d;
+  $("tech").classList.toggle("hide", !showTech);
+  if (showTech) {
+    $("r-rule").textContent = d.primaryRule || "-";
+    $("r-err").textContent = d.errorCode || "-";
+    $("r-errmsg").textContent = d.errorMessage || "-";
+    $("r-corr").textContent = d.correlationId || "-";
+  }
+}
+
+$("go").addEventListener("click", run);
+</script>
+</body>
+</html>

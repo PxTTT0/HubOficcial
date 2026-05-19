@@ -1,0 +1,139 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HUB Vendas API — Stack Portainer / Docker Compose
+#
+# COMO USAR NO PORTAINER:
+#   1. Stacks → Add stack → Web editor  (cole este arquivo)
+#   2. Na aba "Env" do Portainer, adicione as variáveis sensíveis:
+#        MAKSCORE_EPOSI_LOGIN, MAKSCORE_EPOSI_PASSWORD, MAKSCORE_CNPJ_PEPPER
+#   3. Deploy the stack
+#
+# VARIÁVEIS OBRIGATÓRIAS (definir no Portainer):
+#   MAKSCORE_EPOSI_LOGIN      - login da API E-POSI
+#   MAKSCORE_EPOSI_PASSWORD   - senha da API E-POSI
+#   MAKSCORE_CNPJ_PEPPER      - pepper para hash de CNPJ (string aleatória)
+#   AUTH_SESSION_SECRET       - segredo aleatório forte (32+ chars)
+#   AUTH_TRUSTED_ORIGINS      - origens HTTPS confiáveis do frontend
+#   AUTH_BOOTSTRAP_ADMIN_PASSWORD_HASH ou AUTH_USERS_JSON
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  hub-vendas-api:
+    # Imagem já construída no VPS (ver DEPLOY.md).
+    # Para builds automáticos via Portainer Git stack, trocar por: build: .
+    image: makfil/hub-vendas-api:latest
+    container_name: hub-vendas-api
+    restart: unless-stopped
+
+    # Porta exposta APENAS no loopback — nginx/NPM faz o proxy público.
+    # Para acesso direto sem nginx, trocar por "3000:3000".
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+
+      # ── Conector E-POSI ──────────────────────────────────────────────────
+      MAKSCORE_EPOSI_MODE: ${MAKSCORE_EPOSI_MODE:-live}
+      MAKSCORE_EPOSI_AUTH_URL: ${MAKSCORE_EPOSI_AUTH_URL:-https://eposi.toolsdata.com.br/api/gatewaybiro/authentication}
+      MAKSCORE_EPOSI_QUERY_URL: ${MAKSCORE_EPOSI_QUERY_URL:-https://eposi.toolsdata.com.br/api/gatewaybiro/processfilter}
+
+      # Credenciais — definir na aba Env do Portainer (não commitar)
+      MAKSCORE_EPOSI_LOGIN: ${MAKSCORE_EPOSI_LOGIN}
+      MAKSCORE_EPOSI_PASSWORD: ${MAKSCORE_EPOSI_PASSWORD}
+
+      # ── Política Makfil ──────────────────────────────────────────────────
+      MAKSCORE_DEFAULT_PRODUCT: ${MAKSCORE_DEFAULT_PRODUCT:-TOTAL_PJ}
+      MAKSCORE_APPROVE_MIN_SCORE: ${MAKSCORE_APPROVE_MIN_SCORE:-700}
+      MAKSCORE_REPROVE_MAX_SCORE: ${MAKSCORE_REPROVE_MAX_SCORE:-400}
+      MAKSCORE_VALIDITY_HOURS: ${MAKSCORE_VALIDITY_HOURS:-24}
+      MAKSCORE_HIGH_TICKET_AMOUNT: ${MAKSCORE_HIGH_TICKET_AMOUNT:-50000}
+
+      # ── Resiliência ──────────────────────────────────────────────────────
+      MAKSCORE_HTTP_TIMEOUT_MS: ${MAKSCORE_HTTP_TIMEOUT_MS:-8000}
+      MAKSCORE_RATE_LIMIT_PER_MIN: ${MAKSCORE_RATE_LIMIT_PER_MIN:-20}
+
+      # Pepper para hash CNPJ — definir na aba Env do Portainer
+      MAKSCORE_CNPJ_PEPPER: ${MAKSCORE_CNPJ_PEPPER}
+
+      # ── Autenticação, sessão e CSRF ─────────────────────────────────────
+      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET}
+      AUTH_SESSION_COOKIE_NAME: ${AUTH_SESSION_COOKIE_NAME:-hub_sid}
+      AUTH_SESSION_TTL_MS: ${AUTH_SESSION_TTL_MS:-43200000}
+      AUTH_SESSION_IDLE_MS: ${AUTH_SESSION_IDLE_MS:-1800000}
+      AUTH_SESSION_BIND_IP_ROLES: ${AUTH_SESSION_BIND_IP_ROLES:-admin,analista}
+      AUTH_CSRF_COOKIE_NAME: ${AUTH_CSRF_COOKIE_NAME:-hub_csrf}
+      AUTH_SECURE_COOKIES: "true"
+      AUTH_TRUST_PROXY: ${AUTH_TRUST_PROXY:-true}
+      AUTH_TRUSTED_ORIGINS: ${AUTH_TRUSTED_ORIGINS}
+      AUTH_ALLOW_DEV_HEADER_AUTH: "false"
+
+      # ── Usuários internos ───────────────────────────────────────────────
+      AUTH_BOOTSTRAP_ADMIN_ID: ${AUTH_BOOTSTRAP_ADMIN_ID:-bootstrap-admin}
+      AUTH_BOOTSTRAP_ADMIN_USERNAME: ${AUTH_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      AUTH_BOOTSTRAP_ADMIN_PASSWORD_HASH: ${AUTH_BOOTSTRAP_ADMIN_PASSWORD_HASH}
+      AUTH_USERS_JSON: ${AUTH_USERS_JSON:-}
+
+      # ── Política de senha ───────────────────────────────────────────────
+      AUTH_PASSWORD_MIN_LENGTH: ${AUTH_PASSWORD_MIN_LENGTH:-12}
+      AUTH_PASSWORD_REQUIRE_LOWERCASE: ${AUTH_PASSWORD_REQUIRE_LOWERCASE:-true}
+      AUTH_PASSWORD_REQUIRE_UPPERCASE: ${AUTH_PASSWORD_REQUIRE_UPPERCASE:-true}
+      AUTH_PASSWORD_REQUIRE_NUMBER: ${AUTH_PASSWORD_REQUIRE_NUMBER:-true}
+      AUTH_PASSWORD_REQUIRE_SYMBOL: ${AUTH_PASSWORD_REQUIRE_SYMBOL:-true}
+
+      # ── Rate limit de segurança ────────────────────────────────────────
+      AUTH_USER_RATE_LIMIT_PER_MIN: ${AUTH_USER_RATE_LIMIT_PER_MIN:-60}
+      AUTH_IP_RATE_LIMIT_PER_MIN: ${AUTH_IP_RATE_LIMIT_PER_MIN:-120}
+      AUTH_LOGIN_RATE_LIMIT_PER_MIN: ${AUTH_LOGIN_RATE_LIMIT_PER_MIN:-10}
+      AUTH_LOGIN_FAILURE_LIMIT_PER_15_MIN: ${AUTH_LOGIN_FAILURE_LIMIT_PER_15_MIN:-25}
+
+      # ── Argon2id ────────────────────────────────────────────────────────
+      AUTH_ARGON2_MEMORY_COST: ${AUTH_ARGON2_MEMORY_COST:-19456}
+      AUTH_ARGON2_TIME_COST: ${AUTH_ARGON2_TIME_COST:-3}
+      AUTH_ARGON2_PARALLELISM: ${AUTH_ARGON2_PARALLELISM:-1}
+
+      # ── MFA / TOTP ──────────────────────────────────────────────────────
+      AUTH_MFA_REQUIRED_ROLES: ${AUTH_MFA_REQUIRED_ROLES:-admin,analista}
+      AUTH_MFA_ISSUER: ${AUTH_MFA_ISSUER:-HubVendasMakfil}
+      AUTH_MFA_CHALLENGE_TTL_MS: ${AUTH_MFA_CHALLENGE_TTL_MS:-300000}
+      AUTH_MFA_RECOVERY_CODES: ${AUTH_MFA_RECOVERY_CODES:-10}
+      AUTH_MFA_RATE_LIMIT_PER_MIN: ${AUTH_MFA_RATE_LIMIT_PER_MIN:-5}
+      AUTH_MFA_FAILURE_LIMIT_PER_15_MIN: ${AUTH_MFA_FAILURE_LIMIT_PER_15_MIN:-10}
+
+      # ── Auditoria persistente ──────────────────────────────────────────
+      AUDIT_LOG_PATH: ${AUDIT_LOG_PATH:-/var/log/hub-vendas/security-audit.jsonl}
+      AUDIT_MEMORY_RETAIN: ${AUDIT_MEMORY_RETAIN:-1000}
+
+    volumes:
+      - hub-vendas-audit:/var/log/hub-vendas
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    # Limites de recurso — ajustar conforme VPS
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  default:
+    name: hub-vendas-net
+
+volumes:
+  hub-vendas-audit:
+    name: hub-vendas-audit
