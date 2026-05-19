@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - "codex/**"
+  pull_request:
+    branches:
+      - master
+      - main
+
+# Cancela runs antigas da mesma branch/PR ao subir um novo push
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build & Test (Node 20)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # npm ci exige package-lock.json (já versionado)
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (tsc)
+        run: npm run build
+
+      - name: Test (node:test, 59 testes)
+        run: npm test
+
+  audit:
+    name: Dependency audit (informativo)
+    runs-on: ubuntu-latest
+    # Não bloqueia o merge — apenas reporta vulnerabilidades conhecidas
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: npm audit (high+)
+        run: npm audit --audit-level=high
