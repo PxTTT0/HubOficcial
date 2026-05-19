@@ -38,9 +38,9 @@ USER nodejs
 
 EXPOSE 3000
 
-# Health check: GET /api/makscore/health (endpoint real no routes.ts)
+# Health check: GET /healthz (público, sem autenticação — definido em server.ts)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -qO- http://localhost:3000/api/makscore/health || exit 1
+  CMD wget -qO- http://localhost:3000/healthz || exit 1
 
 # Executar node diretamente — não usa npm start para não precisar de .env em disco
 CMD ["node", "dist/src/server.js"]
