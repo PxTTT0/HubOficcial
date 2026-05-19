@@ -44,6 +44,10 @@ export interface ProductionEnvironment {
     eposiLoginSecondary: string;
     eposiPasswordSecondary: string;
   };
+  redis: {
+    url: string | null;
+    allowInMemoryState: boolean;
+  };
 }
 
 /**
@@ -164,6 +168,15 @@ export function validateProductionEnvironment(env: ProductionEnvironment): void 
         );
       }
     }
+  }
+
+  // Estado efemero (sessoes/rate limit/MFA challenge/token E-POSI) em
+  // memoria nao sobrevive a restart nem e compartilhado entre replicas.
+  // Producao exige Redis, salvo opt-out explicito de emergencia.
+  if (!env.redis.url && !env.redis.allowInMemoryState) {
+    issues.push(
+      "REDIS_URL nao definido em producao - estado de sessao/rate-limit/MFA ficaria em memoria (perde no restart, nao compartilha entre replicas). Definir REDIS_URL ou, em emergencia, ALLOW_IN_MEMORY_STATE=true",
+    );
   }
 
   if (issues.length > 0) {

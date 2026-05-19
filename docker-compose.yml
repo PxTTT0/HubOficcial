@@ -113,6 +113,19 @@ services:
       AUDIT_LOG_PATH: ${AUDIT_LOG_PATH:-/var/log/hub-vendas/security-audit.jsonl}
       AUDIT_MEMORY_RETAIN: ${AUDIT_MEMORY_RETAIN:-1000}
 
+      # ── Estado distribuído (Redis) ─────────────────────────────────────
+      # Default aponta para o serviço redis abaixo. Sessões, rate limits,
+      # challenges MFA e token E-POSI ficam compartilhados entre réplicas.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-hubvendas:}
+      REDIS_TLS: ${REDIS_TLS:-false}
+      # Opt-out emergencial — produção falha sem REDIS_URL salvo isto.
+      ALLOW_IN_MEMORY_STATE: ${ALLOW_IN_MEMORY_STATE:-false}
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
     volumes:
       - hub-vendas-audit:/var/log/hub-vendas
 
@@ -137,6 +150,27 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # ── Redis: estado efêmero compartilhado ──────────────────────────────────
+  # appendonly=yes => sessões/rate-limits sobrevivem a restart do Redis.
+  redis:
+    image: redis:7-alpine
+    container_name: hub-vendas-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - hub-vendas-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   default:
     name: hub-vendas-net
@@ -144,3 +178,5 @@ networks:
 volumes:
   hub-vendas-audit:
     name: hub-vendas-audit
+  hub-vendas-redis:
+    name: hub-vendas-redis

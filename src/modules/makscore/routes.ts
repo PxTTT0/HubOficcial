@@ -7,7 +7,7 @@ import { MakScoreInputError, type MakScoreService } from "./service";
 import type { MakScoreResult } from "./types";
 import type { SecurityContext } from "../../security";
 import { buildAuditContext } from "../../security/audit";
-import { FixedWindowRateLimiter } from "../../security/rateLimit";
+import type { InfraStores } from "../../infra";
 
 const QuerySchema = z.object({
   cnpj: z.string().min(11).max(20),
@@ -35,9 +35,34 @@ export function buildMakScoreRouter(
   service: MakScoreService,
   cfg: MakScoreConfig,
   security: SecurityContext,
+  infra: InfraStores,
 ): Router {
   const router = Router();
-  const limiter = new FixedWindowRateLimiter(cfg.rateLimitPerMin, 60_000);
+  // FAIL-OPEN: se o backend (Redis) cair, o MakScore continua atendendo
+  // (disponibilidade comercial), mas emite auditoria persistente WARN
+  // para visibilidade do incidente.
+  let lastDegradedWarnAtMs = 0;
+  const limiter = infra.makeRateLimiter(
+    "makscore",
+    cfg.rateLimitPerMin,
+    60_000,
+    "open",
+    () => {
+      const now = Date.now();
+      // throttle do warn p/ nao floodar a auditoria sob Redis instavel
+      if (now - lastDegradedWarnAtMs < 30_000) return;
+      lastDegradedWarnAtMs = now;
+      security.audit.write({
+        ts: new Date().toISOString(),
+        scope: "makscore",
+        type: "query.rate_limit_degraded",
+        severity: "warn",
+        outcome: "failure",
+        reason: "rate_limit_backend_unavailable",
+        details: { failMode: "open" },
+      });
+    },
+  );
 
   router.use(requireAuth(security));
 
@@ -49,7 +74,7 @@ export function buildMakScoreRouter(
     }
     const userId = req.user!.id;
     const ip = req.ip || req.socket.remoteAddress || "unknown";
-    const rl = limiter.check(`${userId}:${ip}`);
+    const rl = await limiter.check(`${userId}:${ip}`);
     res.setHeader("X-RateLimit-MakScore-Remaining", String(rl.remaining));
     res.setHeader("X-RateLimit-MakScore-Reset", String(Math.ceil(rl.resetAtMs / 1000)));
     if (!rl.ok) {

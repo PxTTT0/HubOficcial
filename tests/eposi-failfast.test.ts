@@ -50,6 +50,7 @@ function buildEnv(
       eposiPasswordSecondary: "",
       ...makscore,
     },
+    redis: { url: "redis://localhost:6379", allowInMemoryState: false },
   };
 }
 

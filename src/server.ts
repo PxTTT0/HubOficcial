@@ -9,11 +9,15 @@ import {
   loadSecurityAuditConfig,
 } from "./security";
 import { validateProductionEnvironment } from "./security/bootstrap";
+import { createInfraStores } from "./infra";
 
 export function buildApp() {
   const app = express();
-  const security = createSecurityContext();
-  const makscore = createMakScoreModule(security);
+  // Uma unica instancia de infra (mesmo Redis client) compartilhada
+  // entre seguranca e MakScore.
+  const infra = createInfraStores();
+  const security = createSecurityContext(undefined, undefined, undefined, undefined, infra);
+  const makscore = createMakScoreModule(security, infra);
   validateProductionEnvironment({
     envName: security.cfg.envName,
     security: security.cfg,
@@ -30,6 +34,10 @@ export function buildApp() {
       eposiPassword: makscore.cfg.eposiPassword,
       eposiLoginSecondary: makscore.cfg.eposiLoginSecondary,
       eposiPasswordSecondary: makscore.cfg.eposiPasswordSecondary,
+    },
+    redis: {
+      url: infra.redisConfig.url,
+      allowInMemoryState: infra.redisConfig.allowInMemoryState,
     },
   });
   app.disable("x-powered-by");
