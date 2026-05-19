@@ -1,5 +1,6 @@
 export type EposiProduct = "TOTAL_PJ" | "COMPLETA_PJ";
 export type EposiMode = "mock" | "live";
+export type EposiCredentialId = "primary" | "secondary";
 
 export interface MakScoreConfig {
   eposiMode: EposiMode;
@@ -7,6 +8,13 @@ export interface MakScoreConfig {
   eposiQueryUrl: string;
   eposiLogin: string;
   eposiPassword: string;
+  // Credencial secundaria OPCIONAL para rotacao sem downtime.
+  // Vazia => apenas a primaria existe (compat total com deploy antigo).
+  eposiLoginSecondary: string;
+  eposiPasswordSecondary: string;
+  // Pin manual de ordem para cutover controlado. NUNCA desativa o
+  // fallback - apenas inverte qual credencial e tentada primeiro.
+  eposiActiveCredential: EposiCredentialId;
   defaultProduct: EposiProduct;
   approveMinScore: number;
   reproveMaxScore: number;
@@ -45,6 +53,12 @@ export function loadConfig(): MakScoreConfig {
       "https://eposi.toolsdata.com.br/api/gatewaybiro/processfilter",
     eposiLogin: process.env.MAKSCORE_EPOSI_LOGIN ?? "",
     eposiPassword: process.env.MAKSCORE_EPOSI_PASSWORD ?? "",
+    eposiLoginSecondary: process.env.MAKSCORE_EPOSI_LOGIN_SECONDARY ?? "",
+    eposiPasswordSecondary: process.env.MAKSCORE_EPOSI_PASSWORD_SECONDARY ?? "",
+    eposiActiveCredential:
+      process.env.MAKSCORE_EPOSI_ACTIVE_CREDENTIAL === "secondary"
+        ? "secondary"
+        : "primary",
     defaultProduct: product(process.env.MAKSCORE_DEFAULT_PRODUCT),
     approveMinScore: num("MAKSCORE_APPROVE_MIN_SCORE", 700),
     reproveMaxScore: num("MAKSCORE_REPROVE_MAX_SCORE", 400),

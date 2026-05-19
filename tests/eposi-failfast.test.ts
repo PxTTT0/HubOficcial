@@ -46,6 +46,8 @@ function buildEnv(
       eposiMode: "mock",
       eposiLogin: "",
       eposiPassword: "",
+      eposiLoginSecondary: "",
+      eposiPasswordSecondary: "",
       ...makscore,
     },
   };
@@ -155,5 +157,96 @@ test("erros E-POSI sao agregados junto com outras issues de seguranca", () => {
       assert.ok(err.issues.length >= 3);
       return true;
     },
+  );
+});
+
+// ───────────── Credencial secundaria (rotacao) ─────────────
+
+const VALID_PRIMARY = {
+  eposiMode: "live",
+  eposiLogin: "primary@makfil.com.br",
+  eposiPassword: "Primary-Real-9x",
+};
+
+test("production + live: secundaria parcial (login sem senha) FALHA o startup", () => {
+  assert.throws(
+    () =>
+      validateProductionEnvironment(
+        buildEnv({
+          ...VALID_PRIMARY,
+          eposiLoginSecondary: "secondary@makfil.com.br",
+          eposiPasswordSecondary: "",
+        }),
+      ),
+    (err: unknown) => {
+      assert.ok(err instanceof ProductionSecurityError);
+      assert.match(err.message, /secundaria parcial/i);
+      return true;
+    },
+  );
+});
+
+test("production + live: secundaria parcial (senha sem login) FALHA o startup", () => {
+  assert.throws(
+    () =>
+      validateProductionEnvironment(
+        buildEnv({
+          ...VALID_PRIMARY,
+          eposiLoginSecondary: "",
+          eposiPasswordSecondary: "Secondary-Real-7z",
+        }),
+      ),
+    (err: unknown) => {
+      assert.ok(err instanceof ProductionSecurityError);
+      assert.match(err.message, /secundaria parcial/i);
+      return true;
+    },
+  );
+});
+
+test("production + live: secundaria ausente (ambas vazias) NAO falha (opcional)", () => {
+  assert.doesNotThrow(() =>
+    validateProductionEnvironment(buildEnv({ ...VALID_PRIMARY })),
+  );
+});
+
+test("production + live: secundaria completa e valida NAO falha", () => {
+  assert.doesNotThrow(() =>
+    validateProductionEnvironment(
+      buildEnv({
+        ...VALID_PRIMARY,
+        eposiLoginSecondary: "secondary@makfil.com.br",
+        eposiPasswordSecondary: "Secondary-Real-7z",
+      }),
+    ),
+  );
+});
+
+test("production + live: secundaria com placeholder e rejeitada", () => {
+  assert.throws(
+    () =>
+      validateProductionEnvironment(
+        buildEnv({
+          ...VALID_PRIMARY,
+          eposiLoginSecondary: "secondary@makfil.com.br",
+          eposiPasswordSecondary: "changeme",
+        }),
+      ),
+    (err: unknown) => {
+      assert.ok(err instanceof ProductionSecurityError);
+      assert.match(err.message, /MAKSCORE_EPOSI_PASSWORD_SECONDARY parece ser um placeholder/);
+      return true;
+    },
+  );
+});
+
+test("nao-producao: secundaria parcial NAO falha (guard de envName)", () => {
+  assert.doesNotThrow(() =>
+    validateProductionEnvironment(
+      buildEnv(
+        { ...VALID_PRIMARY, eposiLoginSecondary: "x@y.com", eposiPasswordSecondary: "" },
+        "development",
+      ),
+    ),
   );
 });

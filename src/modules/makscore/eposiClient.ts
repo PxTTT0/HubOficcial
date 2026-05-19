@@ -1,4 +1,11 @@
-import type { MakScoreConfig, EposiProduct } from "./config";
+import type { EposiCredentialId, MakScoreConfig, EposiProduct } from "./config";
+import {
+  EnvEposiCredentialProvider,
+  NOOP_EPOSI_AUDITOR,
+  type EposiAuthAuditor,
+  type EposiCredential,
+  type EposiCredentialProvider,
+} from "./eposiCredentials";
 
 export interface EposiRawResponse {
   raw: unknown;
@@ -15,12 +22,33 @@ export interface EposiClient {
 interface TokenCache {
   token: string;
   expiresAt: number;
+  credentialId: EposiCredentialId;
 }
 
 class HttpError extends Error {
   constructor(public status: number, message: string) {
     super(message);
   }
+}
+
+/**
+ * Reduz qualquer erro a um vocabulario fixo e seguro. NUNCA propaga a
+ * mensagem original (pode conter URL com query, corpo de resposta, etc).
+ */
+function sanitizeAuthReason(err: unknown): string {
+  if (err instanceof HttpError) {
+    if (err.status === 401 || err.status === 403) {
+      return `auth_rejected_${err.status}`;
+    }
+    if (err.message === "missing_token") return "missing_token";
+    return `auth_http_${err.status}`;
+  }
+  if (err instanceof Error && err.name === "AbortError") return "timeout";
+  return "network_error";
+}
+
+function httpStatusOf(err: unknown): number | undefined {
+  return err instanceof HttpError ? err.status : undefined;
 }
 
 async function fetchWithTimeout(
@@ -38,35 +66,79 @@ async function fetchWithTimeout(
 
 export class LiveEposiClient implements EposiClient {
   private tokenCache: TokenCache | null = null;
+  private readonly provider: EposiCredentialProvider;
+  private readonly auditor: EposiAuthAuditor;
 
-  constructor(private cfg: MakScoreConfig) {}
+  // provider/auditor opcionais => `new LiveEposiClient(cfg)` continua
+  // valido (compat com testes/integracoes existentes).
+  constructor(
+    private cfg: MakScoreConfig,
+    provider?: EposiCredentialProvider,
+    auditor?: EposiAuthAuditor,
+  ) {
+    this.provider = provider ?? new EnvEposiCredentialProvider(cfg);
+    this.auditor = auditor ?? NOOP_EPOSI_AUDITOR;
+  }
+
+  private async requestToken(cred: EposiCredential): Promise<string> {
+    const res = await fetchWithTimeout(this.cfg.eposiAuthUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ login: cred.login, password: cred.password }),
+      timeoutMs: this.cfg.httpTimeoutMs,
+    });
+    if (!res.ok) {
+      // mensagem so com status - sem corpo (pode conter dado sensivel)
+      throw new HttpError(res.status, `auth_http_${res.status}`);
+    }
+    const data = (await res.json()) as { token?: string; access_token?: string };
+    const token = data.token ?? data.access_token;
+    if (!token) throw new HttpError(502, "missing_token");
+    return token;
+  }
 
   private async authenticate(): Promise<string> {
     const now = Date.now();
     if (this.tokenCache && this.tokenCache.expiresAt > now + 5_000) {
       return this.tokenCache.token;
     }
-    if (!this.cfg.eposiLogin || !this.cfg.eposiPassword) {
-      throw new HttpError(500, "MAKSCORE_EPOSI_LOGIN/PASSWORD ausentes");
+
+    const candidates = this.provider.candidates();
+    if (candidates.length === 0) {
+      this.auditor.authExhausted("credentials_absent");
+      // Erro generico - sem detalhe de qual variavel falta.
+      throw new HttpError(500, "Credenciais E-POSI ausentes");
     }
-    const res = await fetchWithTimeout(this.cfg.eposiAuthUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        login: this.cfg.eposiLogin,
-        password: this.cfg.eposiPassword,
-      }),
-      timeoutMs: this.cfg.httpTimeoutMs,
-    });
-    if (!res.ok) {
-      throw new HttpError(res.status, `Falha autenticacao E-POSI (${res.status})`);
+
+    let previousId: EposiCredentialId | null = null;
+    for (const cred of candidates) {
+      try {
+        const token = await this.requestToken(cred);
+        if (previousId && previousId !== cred.id) {
+          this.auditor.authFallback(previousId, cred.id, "previous_failed");
+        }
+        this.auditor.authSuccess(cred.id, 200);
+        this.tokenCache = {
+          token,
+          expiresAt: now + 4 * 60_000,
+          credentialId: cred.id,
+        };
+        return token;
+      } catch (err) {
+        this.auditor.authFailure(
+          cred.id,
+          sanitizeAuthReason(err),
+          httpStatusOf(err),
+        );
+        previousId = cred.id;
+        // continua para a proxima credencial (fallback)
+      }
     }
-    const data = (await res.json()) as { token?: string; access_token?: string };
-    const token = data.token ?? data.access_token;
-    if (!token) throw new HttpError(502, "Token E-POSI ausente na resposta");
-    // token vale 5 minutos; renovar antes para seguranca
-    this.tokenCache = { token, expiresAt: now + 4 * 60_000 };
-    return token;
+
+    // Todas as credenciais falharam. Erro generico e sem segredo:
+    // detalhes ja foram para o audit por credencial (sanitizados).
+    this.auditor.authExhausted("all_credentials_failed");
+    throw new HttpError(502, "Falha de autenticacao E-POSI");
   }
 
   async query(cnpj: string, product: EposiProduct): Promise<EposiRawResponse> {
@@ -240,6 +312,11 @@ export class MockEposiClient implements EposiClient {
   }
 }
 
-export function buildEposiClient(cfg: MakScoreConfig): EposiClient {
-  return cfg.eposiMode === "live" ? new LiveEposiClient(cfg) : new MockEposiClient();
+export function buildEposiClient(
+  cfg: MakScoreConfig,
+  auditor?: EposiAuthAuditor,
+): EposiClient {
+  return cfg.eposiMode === "live"
+    ? new LiveEposiClient(cfg, new EnvEposiCredentialProvider(cfg), auditor)
+    : new MockEposiClient();
 }
