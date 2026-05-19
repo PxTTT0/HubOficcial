@@ -3,7 +3,10 @@ dist
 .env
 .env.local
 .env.production
+.env.validation
 docker-compose.override.yml
+docker-compose.validation.yml
+tmp-validation/
 .claude/
 *.log
 .DS_Store

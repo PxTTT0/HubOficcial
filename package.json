@@ -7,6 +7,7 @@
   "scripts": {
     "auth:hash": "ts-node src/scripts/hash-password.ts",
     "db:migrate": "node --env-file=.env dist/src/scripts/migrate.js",
+    "db:validate": "node --env-file=.env.validation dist/src/scripts/validate-db.js",
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file=.env dist/src/server.js",
     "dev": "node --env-file=.env -r ts-node/register src/server.ts",
