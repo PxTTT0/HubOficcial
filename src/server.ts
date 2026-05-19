@@ -23,7 +23,12 @@ export function buildApp() {
         process.env.AUDIT_LOG_PATH !== undefined &&
         process.env.AUDIT_LOG_PATH.trim().length > 0,
     },
-    makscore: { cnpjPepper: process.env.MAKSCORE_CNPJ_PEPPER ?? "" },
+    makscore: {
+      cnpjPepper: process.env.MAKSCORE_CNPJ_PEPPER ?? "",
+      eposiMode: makscore.cfg.eposiMode,
+      eposiLogin: makscore.cfg.eposiLogin,
+      eposiPassword: makscore.cfg.eposiPassword,
+    },
   });
   app.disable("x-powered-by");
   app.set("trust proxy", security.cfg.trustProxy);

@@ -4,6 +4,24 @@ import type { SecurityConfig } from "./config";
 const DEV_SESSION_SECRET = "dev-insecure-session-secret-change-me";
 const MIN_SESSION_SECRET_BYTES = 32;
 
+// Valores obviamente nao-reais que nao podem subir como credencial E-POSI
+// em producao. Comparados em lowercase, com trim. Match exato (nao substring)
+// para nao rejeitar uma senha forte legitima que contenha "test" no meio.
+const EPOSI_CREDENTIAL_PLACEHOLDERS = new Set([
+  "changeme",
+  "change-me",
+  "trocar",
+  "senha",
+  "password",
+  "admin",
+  "test",
+  "teste",
+]);
+
+function isEposiPlaceholder(value: string): boolean {
+  return EPOSI_CREDENTIAL_PLACEHOLDERS.has(value.trim().toLowerCase());
+}
+
 export class ProductionSecurityError extends Error {
   constructor(public readonly issues: string[]) {
     super(
@@ -18,7 +36,12 @@ export interface ProductionEnvironment {
   envName: string;
   security: SecurityConfig;
   audit: SecurityAuditConfig & { configured?: boolean };
-  makscore: { cnpjPepper: string };
+  makscore: {
+    cnpjPepper: string;
+    eposiMode: string;
+    eposiLogin: string;
+    eposiPassword: string;
+  };
 }
 
 /**
@@ -86,6 +109,34 @@ export function validateProductionEnvironment(env: ProductionEnvironment): void 
     issues.push(
       "MAKSCORE_CNPJ_PEPPER nao configurado - hashes de CNPJ ficariam previsiveis",
     );
+  }
+
+  // Integracao real E-POSI exige credenciais. Em mock nao validamos:
+  // homologacao/dev sobem sem login/senha de proposito. As mensagens
+  // NUNCA incluem o valor de login/senha (so o nome da variavel).
+  if (env.makscore.eposiMode === "live") {
+    const login = env.makscore.eposiLogin?.trim() ?? "";
+    const password = env.makscore.eposiPassword?.trim() ?? "";
+
+    if (login.length === 0) {
+      issues.push(
+        "MAKSCORE_EPOSI_LOGIN nao definido mas MAKSCORE_EPOSI_MODE=live - integracao real exige credencial",
+      );
+    } else if (isEposiPlaceholder(login)) {
+      issues.push(
+        "MAKSCORE_EPOSI_LOGIN parece ser um placeholder - definir o login real da API E-POSI",
+      );
+    }
+
+    if (password.length === 0) {
+      issues.push(
+        "MAKSCORE_EPOSI_PASSWORD nao definido mas MAKSCORE_EPOSI_MODE=live - integracao real exige credencial",
+      );
+    } else if (isEposiPlaceholder(password)) {
+      issues.push(
+        "MAKSCORE_EPOSI_PASSWORD parece ser um placeholder - definir a senha real da API E-POSI",
+      );
+    }
   }
 
   if (issues.length > 0) {
