@@ -41,6 +41,8 @@ export interface ProductionEnvironment {
     eposiMode: string;
     eposiLogin: string;
     eposiPassword: string;
+    eposiLoginSecondary: string;
+    eposiPasswordSecondary: string;
   };
 }
 
@@ -136,6 +138,31 @@ export function validateProductionEnvironment(env: ProductionEnvironment): void 
       issues.push(
         "MAKSCORE_EPOSI_PASSWORD parece ser um placeholder - definir a senha real da API E-POSI",
       );
+    }
+
+    // Credencial secundaria e OPCIONAL, mas se uma metade for definida a
+    // outra tambem tem que ser - secundaria pela metade nao autentica e
+    // mascara um erro de config como "fallback indisponivel" em runtime.
+    const secLogin = env.makscore.eposiLoginSecondary?.trim() ?? "";
+    const secPassword = env.makscore.eposiPasswordSecondary?.trim() ?? "";
+    const secLoginSet = secLogin.length > 0;
+    const secPasswordSet = secPassword.length > 0;
+
+    if (secLoginSet !== secPasswordSet) {
+      issues.push(
+        "Credencial E-POSI secundaria parcial - definir AMBOS MAKSCORE_EPOSI_LOGIN_SECONDARY e MAKSCORE_EPOSI_PASSWORD_SECONDARY, ou nenhum",
+      );
+    } else if (secLoginSet && secPasswordSet) {
+      if (isEposiPlaceholder(secLogin)) {
+        issues.push(
+          "MAKSCORE_EPOSI_LOGIN_SECONDARY parece ser um placeholder - definir o login real ou remover a secundaria",
+        );
+      }
+      if (isEposiPlaceholder(secPassword)) {
+        issues.push(
+          "MAKSCORE_EPOSI_PASSWORD_SECONDARY parece ser um placeholder - definir a senha real ou remover a secundaria",
+        );
+      }
     }
   }
 

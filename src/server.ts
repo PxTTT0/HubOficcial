@@ -28,6 +28,8 @@ export function buildApp() {
       eposiMode: makscore.cfg.eposiMode,
       eposiLogin: makscore.cfg.eposiLogin,
       eposiPassword: makscore.cfg.eposiPassword,
+      eposiLoginSecondary: makscore.cfg.eposiLoginSecondary,
+      eposiPasswordSecondary: makscore.cfg.eposiPasswordSecondary,
     },
   });
   app.disable("x-powered-by");

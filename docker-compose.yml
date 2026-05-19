@@ -44,6 +44,13 @@ services:
       MAKSCORE_EPOSI_LOGIN: ${MAKSCORE_EPOSI_LOGIN}
       MAKSCORE_EPOSI_PASSWORD: ${MAKSCORE_EPOSI_PASSWORD}
 
+      # Credencial secundária OPCIONAL p/ rotação sem downtime.
+      # Deixe vazias se não usar. Parcial em prod+live falha o startup.
+      MAKSCORE_EPOSI_LOGIN_SECONDARY: ${MAKSCORE_EPOSI_LOGIN_SECONDARY:-}
+      MAKSCORE_EPOSI_PASSWORD_SECONDARY: ${MAKSCORE_EPOSI_PASSWORD_SECONDARY:-}
+      # primary (default) | secondary — inverte ordem, não desliga fallback
+      MAKSCORE_EPOSI_ACTIVE_CREDENTIAL: ${MAKSCORE_EPOSI_ACTIVE_CREDENTIAL:-primary}
+
       # ── Política Makfil ──────────────────────────────────────────────────
       MAKSCORE_DEFAULT_PRODUCT: ${MAKSCORE_DEFAULT_PRODUCT:-TOTAL_PJ}
       MAKSCORE_APPROVE_MIN_SCORE: ${MAKSCORE_APPROVE_MIN_SCORE:-700}
