@@ -8,6 +8,7 @@ import { MakScoreService } from "./service";
 import { InMemoryAuditSink } from "./audit";
 import type { SecurityContext } from "../../security";
 import type { SecurityAuditSink } from "../../security";
+import type { InfraStores } from "../../infra";
 
 /**
  * Adapter: traduz eventos de auth E-POSI para o audit PERSISTENTE de
@@ -64,13 +65,20 @@ function eposiSecurityAuditor(sink: SecurityAuditSink): EposiAuthAuditor {
   };
 }
 
-export function createMakScoreModule(security: SecurityContext) {
+export function createMakScoreModule(
+  security: SecurityContext,
+  infra: InfraStores,
+) {
   const cfg = loadConfig();
-  const client = buildEposiClient(cfg, eposiSecurityAuditor(security.audit));
+  const client = buildEposiClient(
+    cfg,
+    eposiSecurityAuditor(security.audit),
+    infra.eposiTokenStore,
+  );
   const repo = new InMemoryMakScoreRepository();
   const audit = new InMemoryAuditSink();
   const service = new MakScoreService(cfg, client, repo, audit);
-  const router = buildMakScoreRouter(service, cfg, security);
+  const router = buildMakScoreRouter(service, cfg, security, infra);
   return { cfg, service, router };
 }
 

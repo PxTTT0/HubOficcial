@@ -6,6 +6,7 @@ import {
   verifyTotpCode,
 } from "./totp";
 import type { UserRepository } from "./users";
+import type { ChallengeRecord, MfaChallengeStore } from "../infra/mfaChallengeStore";
 
 export interface MfaEnrollmentStart {
   secret: string;
@@ -18,11 +19,6 @@ export interface MfaEnrollmentConfirmation {
 
 export interface MfaChallenge {
   token: string;
-  expiresAtMs: number;
-}
-
-interface ChallengeRecord {
-  userId: string;
   expiresAtMs: number;
 }
 
@@ -65,11 +61,10 @@ export function hashRecoveryCode(cfg: SecurityConfig, code: string): string {
 }
 
 export class MfaService {
-  private challenges = new Map<string, ChallengeRecord>();
-
   constructor(
     private readonly cfg: SecurityConfig,
     private readonly users: UserRepository,
+    private readonly challengeStore: MfaChallengeStore,
   ) {}
 
   isRequiredForRole(role: string | undefined): boolean {
@@ -145,19 +140,21 @@ export class MfaService {
     });
   }
 
-  issueChallenge(userId: string): MfaChallenge {
-    this.pruneExpired();
+  async issueChallenge(userId: string): Promise<MfaChallenge> {
     const cid = randomBytes(18).toString("base64url");
     const expiresAtMs = Date.now() + this.cfg.mfaChallengeTtlMs;
-    this.challenges.set(cid, { userId, expiresAtMs });
+    const record: ChallengeRecord = { userId, expiresAtMs };
+    await this.challengeStore.put(cid, record, this.cfg.mfaChallengeTtlMs);
     const sig = signChallenge(this.cfg, cid, expiresAtMs);
     const token = `${encodePart(cid)}.${encodePart(String(expiresAtMs))}.${sig}`;
     return { token, expiresAtMs };
   }
 
-  /** Validates the challenge token (signature, expiry, presence). Does NOT consume it. */
-  resolveChallenge(token: string): { cid: string; userId: string } | null {
-    this.pruneExpired();
+  /**
+   * Verifica APENAS o token (assinatura, formato, expiry). Nao acessa o
+   * store - e usado por quem ainda vai consumir o challenge.
+   */
+  private verifyChallengeToken(token: string): { cid: string; exp: number } | null {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
     let cid: string;
@@ -172,20 +169,29 @@ export class MfaService {
     if (!Number.isFinite(exp)) return null;
     const expectedSig = signChallenge(this.cfg, cid, exp);
     if (!safeEqual(expectedSig, parts[2])) return null;
-    if (Date.now() >= exp) {
-      this.challenges.delete(cid);
-      return null;
-    }
-    const record = this.challenges.get(cid);
-    if (!record || record.expiresAtMs !== exp) return null;
-    return { cid, userId: record.userId };
+    if (Date.now() >= exp) return null;
+    return { cid, exp };
   }
 
-  consumeChallenge(token: string): { userId: string } | null {
-    const resolved = this.resolveChallenge(token);
-    if (!resolved) return null;
-    this.challenges.delete(resolved.cid);
-    return { userId: resolved.userId };
+  /** Valida token + presenca no store. NAO consome. */
+  async resolveChallenge(
+    token: string,
+  ): Promise<{ cid: string; userId: string } | null> {
+    const v = this.verifyChallengeToken(token);
+    if (!v) return null;
+    const record = await this.challengeStore.get(v.cid);
+    if (!record || record.expiresAtMs !== v.exp) return null;
+    return { cid: v.cid, userId: record.userId };
+  }
+
+  async consumeChallenge(token: string): Promise<{ userId: string } | null> {
+    const v = this.verifyChallengeToken(token);
+    if (!v) return null;
+    // GET+DEL atomico: garante consumo unico mesmo com instancias
+    // concorrentes (anti double-spend).
+    const record = await this.challengeStore.consume(v.cid);
+    if (!record || record.expiresAtMs !== v.exp) return null;
+    return { userId: record.userId };
   }
 
   verifyTotp(userId: string, code: string): boolean {
@@ -210,10 +216,4 @@ export class MfaService {
     return Boolean(this.users.consumeRecoveryHash(userId, expected));
   }
 
-  private pruneExpired(): void {
-    const now = Date.now();
-    for (const [cid, record] of this.challenges) {
-      if (record.expiresAtMs <= now) this.challenges.delete(cid);
-    }
-  }
 }

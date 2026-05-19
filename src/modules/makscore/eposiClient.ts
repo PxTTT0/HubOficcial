@@ -6,6 +6,10 @@ import {
   type EposiCredential,
   type EposiCredentialProvider,
 } from "./eposiCredentials";
+import {
+  InMemoryEposiTokenStore,
+  type EposiTokenStore,
+} from "../../infra/eposiTokenStore";
 
 export interface EposiRawResponse {
   raw: unknown;
@@ -17,12 +21,6 @@ export interface EposiRawResponse {
 
 export interface EposiClient {
   query(cnpj: string, product: EposiProduct): Promise<EposiRawResponse>;
-}
-
-interface TokenCache {
-  token: string;
-  expiresAt: number;
-  credentialId: EposiCredentialId;
 }
 
 class HttpError extends Error {
@@ -65,19 +63,22 @@ async function fetchWithTimeout(
 }
 
 export class LiveEposiClient implements EposiClient {
-  private tokenCache: TokenCache | null = null;
   private readonly provider: EposiCredentialProvider;
   private readonly auditor: EposiAuthAuditor;
+  private readonly tokenStore: EposiTokenStore;
 
-  // provider/auditor opcionais => `new LiveEposiClient(cfg)` continua
-  // valido (compat com testes/integracoes existentes).
+  // provider/auditor/tokenStore opcionais => `new LiveEposiClient(cfg)`
+  // continua valido (compat). tokenStore default em memoria (por
+  // instancia); em producao recebe o store Redis compartilhado.
   constructor(
     private cfg: MakScoreConfig,
     provider?: EposiCredentialProvider,
     auditor?: EposiAuthAuditor,
+    tokenStore?: EposiTokenStore,
   ) {
     this.provider = provider ?? new EnvEposiCredentialProvider(cfg);
     this.auditor = auditor ?? NOOP_EPOSI_AUDITOR;
+    this.tokenStore = tokenStore ?? new InMemoryEposiTokenStore();
   }
 
   private async requestToken(cred: EposiCredential): Promise<string> {
@@ -99,8 +100,10 @@ export class LiveEposiClient implements EposiClient {
 
   private async authenticate(): Promise<string> {
     const now = Date.now();
-    if (this.tokenCache && this.tokenCache.expiresAt > now + 5_000) {
-      return this.tokenCache.token;
+    // FAIL-OPEN: erro de cache => trata como miss e reautentica.
+    const cached = await this.tokenStore.get();
+    if (cached && cached.expiresAtMs > now + 5_000) {
+      return cached.token;
     }
 
     const candidates = this.provider.candidates();
@@ -118,11 +121,11 @@ export class LiveEposiClient implements EposiClient {
           this.auditor.authFallback(previousId, cred.id, "previous_failed");
         }
         this.auditor.authSuccess(cred.id, 200);
-        this.tokenCache = {
+        await this.tokenStore.set({
           token,
-          expiresAt: now + 4 * 60_000,
           credentialId: cred.id,
-        };
+          expiresAtMs: now + 4 * 60_000,
+        });
         return token;
       } catch (err) {
         this.auditor.authFailure(
@@ -162,7 +165,7 @@ export class LiveEposiClient implements EposiClient {
     }
     if (httpStatus === 401 || httpStatus === 403) {
       // invalida token para forcar reautenticacao no proximo
-      this.tokenCache = null;
+      await this.tokenStore.clear();
     }
     return { raw, httpStatus, fromMock: false };
   }
@@ -315,8 +318,9 @@ export class MockEposiClient implements EposiClient {
 export function buildEposiClient(
   cfg: MakScoreConfig,
   auditor?: EposiAuthAuditor,
+  tokenStore?: EposiTokenStore,
 ): EposiClient {
   return cfg.eposiMode === "live"
-    ? new LiveEposiClient(cfg, new EnvEposiCredentialProvider(cfg), auditor)
+    ? new LiveEposiClient(cfg, new EnvEposiCredentialProvider(cfg), auditor, tokenStore)
     : new MockEposiClient();
 }
