@@ -48,6 +48,13 @@ export interface ProductionEnvironment {
     url: string | null;
     allowInMemoryState: boolean;
   };
+  db: {
+    url: string | null;
+    allowInMemoryState: boolean;
+    /** Resultado da validacao da chave de cifragem do secret MFA. */
+    encryptionKeyOk: boolean;
+    encryptionKeyReason?: string;
+  };
 }
 
 /**
@@ -176,6 +183,21 @@ export function validateProductionEnvironment(env: ProductionEnvironment): void 
   if (!env.redis.url && !env.redis.allowInMemoryState) {
     issues.push(
       "REDIS_URL nao definido em producao - estado de sessao/rate-limit/MFA ficaria em memoria (perde no restart, nao compartilha entre replicas). Definir REDIS_URL ou, em emergencia, ALLOW_IN_MEMORY_STATE=true",
+    );
+  }
+
+  // DB e fonte de verdade de usuarios/MFA/recovery/auditoria funcional.
+  // Producao exige DATABASE_URL, salvo o mesmo opt-out de emergencia.
+  if (!env.db.url && !env.db.allowInMemoryState) {
+    issues.push(
+      "DATABASE_URL nao definido em producao - usuarios/MFA/recovery/auditoria funcional ficariam em memoria (perde no restart). Definir DATABASE_URL ou, em emergencia, ALLOW_IN_MEMORY_STATE=true",
+    );
+  }
+  // Com DB ativo, o secret TOTP e cifrado em repouso: a chave e
+  // obrigatoria e precisa ser forte (base64 de 32 bytes).
+  if (env.db.url && !env.db.encryptionKeyOk) {
+    issues.push(
+      `AUTH_MFA_SECRET_ENCRYPTION_KEY invalida com DATABASE_URL ativo (${env.db.encryptionKeyReason ?? "ausente"}) - exigir base64 que decodifique para 32 bytes`,
     );
   }
 

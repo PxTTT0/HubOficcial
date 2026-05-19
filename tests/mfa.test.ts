@@ -266,8 +266,8 @@ test(
 
     try {
       // Faz enrollment direto via service para simular usuario ja com MFA.
-      const enrollment = server.security.mfa.beginEnrollment("admin-2", "admin");
-      server.security.mfa.confirmEnrollment(
+      const enrollment = await server.security.mfa.beginEnrollment("admin-2", "admin");
+      await server.security.mfa.confirmEnrollment(
         "admin-2",
         generateTotpCode(enrollment.secret),
       );

@@ -5,7 +5,6 @@ import type { EposiAuthAuditor } from "./eposiCredentials";
 import { InMemoryMakScoreRepository } from "./repository";
 import { buildMakScoreRouter } from "./routes";
 import { MakScoreService } from "./service";
-import { InMemoryAuditSink } from "./audit";
 import type { SecurityContext } from "../../security";
 import type { SecurityAuditSink } from "../../security";
 import type { InfraStores } from "../../infra";
@@ -76,8 +75,8 @@ export function createMakScoreModule(
     infra.eposiTokenStore,
   );
   const repo = new InMemoryMakScoreRepository();
-  const audit = new InMemoryAuditSink();
-  const service = new MakScoreService(cfg, client, repo, audit);
+  // Auditoria funcional: tabela Postgres em modo DB, memoria em dev/test.
+  const service = new MakScoreService(cfg, client, repo, infra.makscoreAuditSink);
   const router = buildMakScoreRouter(service, cfg, security, infra);
   return { cfg, service, router };
 }

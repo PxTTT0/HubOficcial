@@ -299,6 +299,11 @@ function prodEnv(redis: ProductionEnvironment["redis"], envName = "production"):
       eposiPasswordSecondary: "",
     },
     redis,
+    db: {
+      url: "postgres://localhost/hub",
+      allowInMemoryState: false,
+      encryptionKeyOk: true,
+    },
   };
 }
 

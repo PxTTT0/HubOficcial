@@ -13,6 +13,7 @@ import type {
 import {
   InMemoryAuditSink,
   makeAuditEvent,
+  type AuditEvent,
   type AuditSink,
 } from "./audit";
 
@@ -41,6 +42,14 @@ export class MakScoreService {
     return this.audit;
   }
 
+  // Auditoria funcional e best-effort: DB e assincrono e uma falha de
+  // persistencia NUNCA pode bloquear/derrubar a consulta MakScore.
+  private emitAudit(ev: AuditEvent): void {
+    void this.audit.write(ev).catch(() => {
+      /* engolido: PgMakScoreAuditSink ja loga com throttle */
+    });
+  }
+
   async query(input: QueryInput): Promise<MakScoreResult> {
     const correlationId = randomUUID();
     const cnpj = onlyDigits(input.cnpj);
@@ -48,7 +57,7 @@ export class MakScoreService {
     const start = Date.now();
 
     if (!isValidCnpj(cnpj)) {
-      this.audit.write(
+      this.emitAudit(
         makeAuditEvent({
           type: "query.invalid_input",
           correlationId,
@@ -60,7 +69,7 @@ export class MakScoreService {
       throw new MakScoreInputError("cnpj_invalido", "CNPJ invalido");
     }
 
-    this.audit.write(
+    this.emitAudit(
       makeAuditEvent({
         type: "query.start",
         correlationId,
@@ -73,7 +82,7 @@ export class MakScoreService {
     if (!input.forceRefresh) {
       const cached = this.repo.findValidByCnpj(cnpj);
       if (cached) {
-        this.audit.write(
+        this.emitAudit(
           makeAuditEvent({
             type: "query.cache_hit",
             correlationId,
@@ -90,7 +99,7 @@ export class MakScoreService {
     let result: MakScoreResult;
     try {
       const raw = await this.client.query(cnpj, product);
-      this.audit.write(
+      this.emitAudit(
         makeAuditEvent({
           type: "query.external_ok",
           correlationId,
@@ -140,7 +149,7 @@ export class MakScoreService {
       };
       this.repo.save(persisted);
 
-      this.audit.write(
+      this.emitAudit(
         makeAuditEvent({
           type: "query.decision",
           correlationId,
@@ -158,7 +167,7 @@ export class MakScoreService {
       return result;
     } catch (err: any) {
       // Falha externa NUNCA vira aprovacao. Estado seguro: indisponivel.
-      this.audit.write(
+      this.emitAudit(
         makeAuditEvent({
           type: "query.external_fail",
           correlationId,

@@ -118,8 +118,12 @@ export function buildMakScoreRouter(
   router.get(
     "/audit/recent",
     requireRole(security, "analista", "admin"),
-    (_req, res) => {
-      res.json({ events: service.auditSink.recent(50) });
+    async (_req, res) => {
+      try {
+        res.json({ events: await service.auditSink.recent(50) });
+      } catch {
+        res.status(503).json({ error: "audit_unavailable" });
+      }
     },
   );
 

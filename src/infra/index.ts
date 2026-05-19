@@ -28,12 +28,32 @@ import {
   RedisEposiTokenStore,
   type EposiTokenStore,
 } from "./eposiTokenStore";
+import {
+  createPgExecutor,
+  loadDbConfig,
+  resolveDbBackingMode,
+  type DbBackingMode,
+  type DbConfig,
+  type SqlExecutor,
+} from "./db/pool";
+import { requireEncryptionKey } from "./db/crypto";
+import { PgUserRepository } from "./db/userRepository";
+import { PgMakScoreAuditSink } from "./db/makscoreAuditSink";
+import {
+  InMemoryUserRepository,
+  type UserRepository,
+} from "../security/users";
+import {
+  InMemoryAuditSink,
+  type AuditSink,
+} from "../modules/makscore/audit";
 
 export * from "./redisClient";
 export * from "./sessionStore";
 export * from "./rateLimitStore";
 export * from "./mfaChallengeStore";
 export * from "./eposiTokenStore";
+export * from "./db/pool";
 
 export interface InfraStores {
   mode: BackingMode;
@@ -50,6 +70,13 @@ export interface InfraStores {
     failMode: RateLimitFailMode,
     onFailOpen?: (name: string, err: unknown) => void,
   ) => RateLimiter;
+  // ── Persistencia duravel (Postgres) ──────────────────────────────────
+  dbMode: DbBackingMode;
+  dbConfig: DbConfig;
+  /** Executor SQL quando em modo pg; null em modo memoria. */
+  sqlExecutor: SqlExecutor | null;
+  userRepository: UserRepository;
+  makscoreAuditSink: AuditSink;
 }
 
 /**
@@ -60,12 +87,36 @@ export interface InfraStores {
  * Permite injetar um RedisLike (fake nos testes). Quando `redis` e
  * fornecido, usa modo Redis independentemente de REDIS_URL.
  */
-export function createInfraStores(redis?: RedisLike): InfraStores {
+export function createInfraStores(
+  redis?: RedisLike,
+  db?: SqlExecutor,
+): InfraStores {
   const redisConfig = loadRedisConfig();
   const mode: BackingMode = redis ? "redis" : resolveBackingMode(redisConfig);
 
   const client: RedisLike | null =
     redis ?? (mode === "redis" ? createRealRedis(redisConfig) : null);
+
+  // ── Postgres (estado duravel) ──────────────────────────────────────────
+  const dbConfig = loadDbConfig();
+  const dbMode: DbBackingMode = db ? "pg" : resolveDbBackingMode(dbConfig);
+  const sqlExecutor: SqlExecutor | null =
+    db ?? (dbMode === "pg" ? createPgExecutor(dbConfig) : null);
+
+  let userRepository: UserRepository;
+  let makscoreAuditSink: AuditSink;
+  if (sqlExecutor) {
+    // Em prod o bootstrap ja validou a chave antes de chegar aqui.
+    // Em dev com DATABASE_URL, chave ausente => erro claro (sem valor).
+    const encKey = requireEncryptionKey(
+      process.env.AUTH_MFA_SECRET_ENCRYPTION_KEY,
+    );
+    userRepository = new PgUserRepository(sqlExecutor, encKey);
+    makscoreAuditSink = new PgMakScoreAuditSink(sqlExecutor);
+  } else {
+    userRepository = new InMemoryUserRepository();
+    makscoreAuditSink = new InMemoryAuditSink();
+  }
 
   const sessionStore: SessionStore = client
     ? new RedisSessionStore(client)
@@ -89,5 +140,10 @@ export function createInfraStores(redis?: RedisLike): InfraStores {
     rateLimitBackend,
     makeRateLimiter: (name, limit, windowMs, failMode, onFailOpen) =>
       new RateLimiter(rateLimitBackend, name, limit, windowMs, failMode, onFailOpen),
+    dbMode,
+    dbConfig,
+    sqlExecutor,
+    userRepository,
+    makscoreAuditSink,
   };
 }
