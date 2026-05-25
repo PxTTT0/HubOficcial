@@ -14,7 +14,10 @@
 import { createPgExecutor, loadDbConfig } from "../infra/db/pool";
 import { runMigrations } from "../infra/db/migrate";
 import { PgUserRepository, seedBootstrapUsers } from "../infra/db/userRepository";
+import { PgMakScoreResultsRepository } from "../infra/db/makscoreResultsRepository";
 import { requireEncryptionKey } from "../infra/db/crypto";
+import { hashCnpj } from "../modules/makscore/repository";
+import type { PersistedMakScore } from "../modules/makscore/types";
 
 const TEST_ID = "validate-db-user";
 const PLAINTEXT_SECRET = "JBSWY3DPEHPK3PXPVALIDATE";
@@ -109,6 +112,50 @@ async function main(): Promise<void> {
       fail("recovery rc2 (intacto) nao consumiu");
     }
     ok("recovery code DELETE RETURNING single-use ok");
+
+    // ── makscore_results: append-only + cache mais recente valido ──────
+    const cnpjHash = hashCnpj("11222333000181");
+    await exec.query("DELETE FROM makscore_results WHERE cnpj_hash = $1", [cnpjHash]);
+    const resultsRepo = new PgMakScoreResultsRepository(exec);
+    const mk = (correlationId: string, score: number, createdAtMs: number): PersistedMakScore => ({
+      correlationId,
+      cnpj: "11.***.***/****-81",
+      product: "TOTAL_PJ",
+      score,
+      outcome: "aprovado",
+      riskLevel: "baixo",
+      primaryRule: "score:aprovado",
+      recommendedAction: "Seguir.",
+      reasons: [],
+      ruleHits: [],
+      errorCode: null,
+      errorMessage: null,
+      validUntil: new Date(createdAtMs + 3_600_000).toISOString(),
+      consultedAt: new Date(createdAtMs).toISOString(),
+      sourceIsMock: true,
+      cadastral: { status: "ativa", razaoSocial: "EMP", cnaePrincipal: null, dataAbertura: null },
+      context: { userId: "validate-db-user" },
+      cnpjHash,
+      createdAtMs,
+      expiresAtMs: createdAtMs + 3_600_000,
+      reviewStatus: "none",
+    });
+    const t0 = Date.now();
+    await resultsRepo.save(mk("mk-old", 500, t0 - 5_000));
+    await resultsRepo.save(mk("mk-new", 800, t0));
+    const hist = await resultsRepo.listHistory({ userId: "validate-db-user", limit: 50, offset: 0 });
+    if (hist.length < 2) fail("makscore_results nao e append-only", String(hist.length));
+    const valid = await resultsRepo.findValidByCnpj("11222333000181");
+    if (valid?.correlationId !== "mk-new") fail("cache nao pegou o mais recente valido");
+    const colCheck = await exec.query(
+      "SELECT * FROM makscore_results WHERE correlation_id = $1",
+      ["mk-new"],
+    );
+    if (JSON.stringify(colCheck.rows[0]).includes("11222333000181")) {
+      fail("CNPJ aberto presente em makscore_results");
+    }
+    await exec.query("DELETE FROM makscore_results WHERE cnpj_hash = $1", [cnpjHash]);
+    ok("makscore_results append-only + cache + sem CNPJ aberto ok");
 
     // ── cleanup ────────────────────────────────────────────────────────
     await exec.query("DELETE FROM users WHERE id = $1", [TEST_ID]);

@@ -2,14 +2,22 @@ import { createHash } from "crypto";
 import { onlyDigits } from "./cnpj";
 import type { PersistedMakScore } from "./types";
 
-// Repositorio em memoria. Persiste apenas resumo e metadados,
-// nunca o payload bruto da E-POSI.
-// Substituir por implementacao real (DB) sem alterar a interface.
+// Repositorio de resultados MakScore. APPEND-ONLY: cada consulta gera
+// uma linha (historico real). Persiste apenas resumo e metadados,
+// nunca o payload bruto da E-POSI nem o CNPJ aberto.
+
+export interface MakScoreHistoryFilter {
+  // Quando definido, restringe ao usuario (vendedor ve so as proprias).
+  userId?: string;
+  limit: number;
+  offset: number;
+}
 
 export interface MakScoreRepository {
-  findValidByCnpj(cnpj: string, now?: number): PersistedMakScore | null;
-  save(record: PersistedMakScore): void;
-  recentByUser(userId: string | undefined, limit?: number): PersistedMakScore[];
+  findValidByCnpj(cnpj: string, now?: number): Promise<PersistedMakScore | null>;
+  save(record: PersistedMakScore): Promise<void>;
+  findByCorrelationId(correlationId: string): Promise<PersistedMakScore | null>;
+  listHistory(filter: MakScoreHistoryFilter): Promise<PersistedMakScore[]>;
 }
 
 export function hashCnpj(cnpj: string): string {
@@ -20,27 +28,38 @@ export function hashCnpj(cnpj: string): string {
 }
 
 export class InMemoryMakScoreRepository implements MakScoreRepository {
-  private records = new Map<string, PersistedMakScore>();
+  // Append-only: lista de registros (nao Map por hash) p/ manter historico.
+  private records: PersistedMakScore[] = [];
 
-  findValidByCnpj(cnpj: string, now = Date.now()): PersistedMakScore | null {
+  async findValidByCnpj(
+    cnpj: string,
+    now = Date.now(),
+  ): Promise<PersistedMakScore | null> {
     const key = hashCnpj(cnpj);
-    const r = this.records.get(key);
-    if (!r) return null;
-    if (r.expiresAtMs <= now) return null;
-    return r;
+    // Mais recente valido por cnpj_hash.
+    const valid = this.records
+      .filter((r) => r.cnpjHash === key && r.expiresAtMs > now)
+      .sort((a, b) => b.createdAtMs - a.createdAtMs);
+    return valid[0] ?? null;
   }
 
-  save(record: PersistedMakScore): void {
-    this.records.set(record.cnpjHash, record);
+  async save(record: PersistedMakScore): Promise<void> {
+    this.records.push({ ...record });
   }
 
-  recentByUser(userId: string | undefined, limit = 20): PersistedMakScore[] {
-    const all = Array.from(this.records.values());
-    const filtered = userId
-      ? all.filter((r) => r.context?.userId === userId)
-      : all;
-    return filtered
+  async findByCorrelationId(
+    correlationId: string,
+  ): Promise<PersistedMakScore | null> {
+    return this.records.find((r) => r.correlationId === correlationId) ?? null;
+  }
+
+  async listHistory(filter: MakScoreHistoryFilter): Promise<PersistedMakScore[]> {
+    const all = filter.userId
+      ? this.records.filter((r) => r.context?.userId === filter.userId)
+      : this.records;
+    return all
+      .slice()
       .sort((a, b) => b.createdAtMs - a.createdAtMs)
-      .slice(0, limit);
+      .slice(filter.offset, filter.offset + filter.limit);
   }
 }

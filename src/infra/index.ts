@@ -39,6 +39,11 @@ import {
 import { requireEncryptionKey } from "./db/crypto";
 import { PgUserRepository } from "./db/userRepository";
 import { PgMakScoreAuditSink } from "./db/makscoreAuditSink";
+import { PgMakScoreResultsRepository } from "./db/makscoreResultsRepository";
+import {
+  InMemoryMakScoreRepository,
+  type MakScoreRepository,
+} from "../modules/makscore/repository";
 import {
   InMemoryUserRepository,
   type UserRepository,
@@ -77,6 +82,7 @@ export interface InfraStores {
   sqlExecutor: SqlExecutor | null;
   userRepository: UserRepository;
   makscoreAuditSink: AuditSink;
+  makscoreRepository: MakScoreRepository;
 }
 
 /**
@@ -105,6 +111,7 @@ export function createInfraStores(
 
   let userRepository: UserRepository;
   let makscoreAuditSink: AuditSink;
+  let makscoreRepository: MakScoreRepository;
   if (sqlExecutor) {
     // Em prod o bootstrap ja validou a chave antes de chegar aqui.
     // Em dev com DATABASE_URL, chave ausente => erro claro (sem valor).
@@ -113,9 +120,11 @@ export function createInfraStores(
     );
     userRepository = new PgUserRepository(sqlExecutor, encKey);
     makscoreAuditSink = new PgMakScoreAuditSink(sqlExecutor);
+    makscoreRepository = new PgMakScoreResultsRepository(sqlExecutor);
   } else {
     userRepository = new InMemoryUserRepository();
     makscoreAuditSink = new InMemoryAuditSink();
+    makscoreRepository = new InMemoryMakScoreRepository();
   }
 
   const sessionStore: SessionStore = client
@@ -145,5 +154,6 @@ export function createInfraStores(
     sqlExecutor,
     userRepository,
     makscoreAuditSink,
+    makscoreRepository,
   };
 }

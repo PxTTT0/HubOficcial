@@ -69,11 +69,15 @@ test("encrypt/decrypt round-trip; tag adulterado e chave errada falham", () => {
 test("migrations: aplica e e idempotente", async () => {
   const exec = freshExec();
   const first = await runMigrations(exec);
-  assert.deepEqual(first, ["0001_init", "0002_makscore_audit"]);
+  assert.deepEqual(first, [
+    "0001_init",
+    "0002_makscore_audit",
+    "0003_makscore_results",
+  ]);
   const second = await runMigrations(exec);
   assert.deepEqual(second, []);
   const r = await exec.query("SELECT version FROM schema_migrations");
-  assert.equal(r.rows.length, 2);
+  assert.equal(r.rows.length, 3);
 });
 
 test("assertSchemaReady: falha sem migrations, ok depois", async () => {

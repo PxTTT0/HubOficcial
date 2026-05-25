@@ -92,8 +92,17 @@ export interface MakScoreResult {
   context?: MakScoreContext;
 }
 
+// Reservado para analise manual futura. Sem endpoint de override nesta
+// branch; default sempre 'none'.
+export type MakScoreReviewStatus = "none" | "pending" | "approved" | "rejected";
+
 export interface PersistedMakScore extends MakScoreResult {
   cnpjHash: string;
   createdAtMs: number;
   expiresAtMs: number;
+  // Estrutura de revisao manual (reservada; sem mutacao nesta branch).
+  reviewStatus: MakScoreReviewStatus;
+  reviewerId?: string | null;
+  reviewNote?: string | null;
+  reviewedAt?: string | null;
 }
