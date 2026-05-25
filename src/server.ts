@@ -78,8 +78,20 @@ export function buildApp() {
   app.use(express.json({ limit: "16kb" }));
   app.use(applyCsrf(security.cfg, security.audit));
 
+  // Liveness: o processo esta de pe (nao verifica dependencias).
   app.get("/healthz", (_req, res) => {
     res.json({ ok: true });
+  });
+
+  // Readiness: depende de Redis/Postgres respondendo. 503 se alguma cair.
+  // Publico (sem auth) para orquestradores/load balancers.
+  app.get("/readyz", async (_req, res) => {
+    try {
+      const r = await infra.checkReadiness();
+      res.status(r.ready ? 200 : 503).json({ ok: r.ready, checks: r.checks });
+    } catch {
+      res.status(503).json({ ok: false });
+    }
   });
 
   app.use("/api/auth", security.authRouter);
