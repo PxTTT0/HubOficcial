@@ -73,6 +73,45 @@ CREATE INDEX IF NOT EXISTS makscore_audit_corr_idx ON makscore_audit (correlatio
 CREATE INDEX IF NOT EXISTS makscore_audit_user_idx ON makscore_audit (user_id);
 `,
   },
+  {
+    version: "0003_makscore_results",
+    sql: `
+-- Resultados MakScore: APPEND-ONLY (1 linha por consulta = historico).
+-- NUNCA CNPJ aberto/payload bruto/token/credenciais. Apenas resumo
+-- seguro + metadados de decisao. error_code/error_message guardados
+-- para projecao tecnica (analista/admin).
+CREATE TABLE IF NOT EXISTS makscore_results (
+  correlation_id     text    PRIMARY KEY,
+  cnpj_hash          text    NOT NULL,
+  cnpj_masked        text    NOT NULL,
+  product            text    NOT NULL,
+  score              integer,
+  outcome            text    NOT NULL,
+  risk_level         text    NOT NULL,
+  primary_rule       text    NOT NULL,
+  recommended_action text    NOT NULL,
+  reasons            jsonb   NOT NULL,
+  rule_hits          jsonb   NOT NULL,
+  cadastral          jsonb   NOT NULL,
+  source_is_mock     boolean NOT NULL,
+  error_code         text,
+  error_message      text,
+  proposal_id        text,
+  user_id            text,
+  valid_until        text    NOT NULL,
+  consulted_at       text    NOT NULL,
+  created_at_ms      bigint  NOT NULL,
+  expires_at_ms      bigint  NOT NULL,
+  review_status      text    NOT NULL DEFAULT 'none',
+  reviewer_id        text,
+  review_note        text,
+  reviewed_at        text
+);
+
+CREATE INDEX IF NOT EXISTS makscore_results_hash_idx ON makscore_results (cnpj_hash);
+CREATE INDEX IF NOT EXISTS makscore_results_user_idx ON makscore_results (user_id, created_at_ms);
+`,
+  },
 ];
 
 export const LATEST_MIGRATION_VERSION =

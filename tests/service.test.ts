@@ -67,7 +67,9 @@ test("falha externa retorna estado seguro indisponivel_temporariamente", async (
 test("CNPJ retornado e mascarado e mock e marcado como tal", async () => {
   const svc = new MakScoreService(cfg, new MockEposiClient(), new InMemoryMakScoreRepository(), silentSink());
   const r = await svc.query({ cnpj: VALID_CNPJ });
-  assert.match(r.cnpj, /^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/);
+  // Minimizacao: /query retorna CNPJ MASCARADO (nunca o aberto).
+  assert.match(r.cnpj, /^\d{2}\.\*\*\*\.\*\*\*\/\*\*\*\*-\d{2}$/);
+  assert.ok(!r.cnpj.includes(VALID_CNPJ));
   assert.equal(r.sourceIsMock, true);
 });
 

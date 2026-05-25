@@ -1,10 +1,14 @@
 import { randomUUID } from "crypto";
-import { isValidCnpj, maskCnpjForDisplay, onlyDigits } from "./cnpj";
+import { isValidCnpj, maskCnpjForLog, onlyDigits } from "./cnpj";
 import type { EposiProduct, MakScoreConfig } from "./config";
 import type { EposiClient } from "./eposiClient";
 import { normalizeEposi } from "./normalizer";
 import { applyMakfilPolicy } from "./policy";
-import { hashCnpj, type MakScoreRepository } from "./repository";
+import {
+  hashCnpj,
+  type MakScoreHistoryFilter,
+  type MakScoreRepository,
+} from "./repository";
 import type {
   MakScoreContext,
   MakScoreResult,
@@ -40,6 +44,16 @@ export class MakScoreService {
 
   get auditSink(): AuditSink {
     return this.audit;
+  }
+
+  /** Histórico (append-only). RBAC/projeção ficam na camada de rota. */
+  history(filter: MakScoreHistoryFilter): Promise<PersistedMakScore[]> {
+    return this.repo.listHistory(filter);
+  }
+
+  /** Detalhe por correlationId. RBAC/projeção ficam na camada de rota. */
+  getResult(correlationId: string): Promise<PersistedMakScore | null> {
+    return this.repo.findByCorrelationId(correlationId);
   }
 
   // Auditoria funcional e best-effort: DB e assincrono e uma falha de
@@ -80,7 +94,7 @@ export class MakScoreService {
     );
 
     if (!input.forceRefresh) {
-      const cached = this.repo.findValidByCnpj(cnpj);
+      const cached = await this.repo.findValidByCnpj(cnpj);
       if (cached) {
         this.emitAudit(
           makeAuditEvent({
@@ -120,13 +134,15 @@ export class MakScoreService {
 
       result = {
         correlationId,
-        cnpj: maskCnpjForDisplay(cnpj),
+        cnpj: maskCnpjForLog(cnpj),
         product,
         score: normalized.score,
         outcome: decision.outcome,
+        riskLevel: decision.riskLevel,
         primaryRule: decision.primaryRule,
         recommendedAction: decision.recommendedAction,
         reasons: decision.translatedReasons,
+        ruleHits: decision.ruleHits,
         errorCode: normalized.errorCode,
         errorMessage: normalized.errorMessage,
         validUntil: new Date(validUntilMs).toISOString(),
@@ -142,12 +158,13 @@ export class MakScoreService {
       };
 
       const persisted: PersistedMakScore = {
-        ...result,
+        ...result, // result.cnpj ja vem mascarado (minimizacao em toda a app)
         cnpjHash: hashCnpj(cnpj),
         createdAtMs: consultedAt.getTime(),
         expiresAtMs: validUntilMs,
+        reviewStatus: "none",
       };
-      this.repo.save(persisted);
+      await this.repo.save(persisted);
 
       this.emitAudit(
         makeAuditEvent({
@@ -180,14 +197,16 @@ export class MakScoreService {
       const consultedAt = new Date();
       return {
         correlationId,
-        cnpj: maskCnpjForDisplay(cnpj),
+        cnpj: maskCnpjForLog(cnpj),
         product,
         score: null,
         outcome: "indisponivel_temporariamente",
+        riskLevel: "indeterminado",
         primaryRule: "external:fail",
         recommendedAction:
           "Servico de score indisponivel. Tentar novamente em instantes.",
         reasons: [],
+        ruleHits: [],
         errorCode: null,
         errorMessage: null,
         validUntil: consultedAt.toISOString(),

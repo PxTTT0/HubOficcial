@@ -4,7 +4,7 @@ import { canSeeTechnicalDetails, requireAuth, requireRole } from "./auth";
 import { onlyDigits } from "./cnpj";
 import type { MakScoreConfig } from "./config";
 import { MakScoreInputError, type MakScoreService } from "./service";
-import type { MakScoreResult } from "./types";
+import type { MakScoreResult, PersistedMakScore } from "./types";
 import type { SecurityContext } from "../../security";
 import { buildAuditContext } from "../../security/audit";
 import type { InfraStores } from "../../infra";
@@ -14,7 +14,19 @@ const QuerySchema = z.object({
   product: z.enum(["TOTAL_PJ", "COMPLETA_PJ"]).optional(),
   proposalId: z.string().max(64).optional(),
   ticketPretendido: z.number().nonnegative().max(1_000_000_000).optional(),
+  durationMonths: z.number().int().positive().max(600).optional(),
   forceRefresh: z.boolean().optional(),
+  // commercialContext NAO entra no Zod nesta fase (reservado, sem uso).
+});
+
+const HistorySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  offset: z.coerce.number().int().nonnegative().optional(),
+  userId: z.string().max(128).optional(),
+});
+
+const ResultParamSchema = z.object({
+  correlationId: z.string().uuid(),
 });
 
 // O MakScore v1 e usado 100% por usuarios internos. A separacao
@@ -25,10 +37,36 @@ function projectForRole(
   result: MakScoreResult,
   security: SecurityContext,
   role: string | undefined,
-): MakScoreResult | Omit<MakScoreResult, "errorCode" | "errorMessage" | "primaryRule"> {
+):
+  | MakScoreResult
+  | Omit<MakScoreResult, "errorCode" | "errorMessage" | "primaryRule" | "ruleHits"> {
   if (canSeeTechnicalDetails(security, role as any)) return result;
-  const { errorCode, errorMessage, primaryRule, ...rest } = result;
+  // riskLevel permanece (nao tecnico); ruleHits/errorCode/errorMessage/
+  // primaryRule ocultos para vendedor.
+  const { errorCode, errorMessage, primaryRule, ruleHits, ...rest } = result;
   return rest;
+}
+
+// Converte o registro persistido em MakScoreResult (remove campos so de
+// persistencia) e projeta por perfil. reviewStatus/reviewer* expostos
+// apenas a analista/admin.
+function projectPersisted(
+  p: PersistedMakScore,
+  security: SecurityContext,
+  role: string | undefined,
+) {
+  const { cnpjHash, createdAtMs, expiresAtMs, reviewStatus, reviewerId, reviewNote, reviewedAt, ...result } = p;
+  const base = projectForRole(result, security, role);
+  if (canSeeTechnicalDetails(security, role as any)) {
+    return {
+      ...base,
+      reviewStatus,
+      reviewerId: reviewerId ?? null,
+      reviewNote: reviewNote ?? null,
+      reviewedAt: reviewedAt ?? null,
+    };
+  }
+  return base;
 }
 
 export function buildMakScoreRouter(
@@ -103,6 +141,7 @@ export function buildMakScoreRouter(
           userId,
           proposalId: parse.data.proposalId,
           ticketPretendido: parse.data.ticketPretendido,
+          durationMonths: parse.data.durationMonths,
         },
       });
       res.json(projectForRole(result, security, req.user?.role));
@@ -112,6 +151,77 @@ export function buildMakScoreRouter(
         return;
       }
       res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // Historico. vendedor ve so as proprias; analista/admin veem geral
+  // (com filtro userId opcional). Projecao por perfil.
+  router.get("/history", async (req, res) => {
+    const parse = HistorySchema.safeParse(req.query);
+    if (!parse.success) {
+      res.status(400).json({ error: "invalid_input", details: parse.error.flatten() });
+      return;
+    }
+    const role = req.user?.role;
+    const priv = canSeeTechnicalDetails(security, role as any);
+    const limit = parse.data.limit ?? 20;
+    const offset = parse.data.offset ?? 0;
+    // vendedor sempre restrito ao proprio id (ignora userId da query).
+    const filterUserId = priv ? parse.data.userId : req.user!.id;
+    try {
+      const rows = await service.history({ userId: filterUserId, limit, offset });
+      // auditoria: privilegiado acessando dados gerais/de terceiros (sem CNPJ aberto).
+      if (priv && filterUserId !== req.user!.id) {
+        security.audit.write({
+          ts: new Date().toISOString(),
+          scope: "makscore",
+          type: "history.access",
+          severity: "info",
+          ...buildAuditContext(req, { userId: req.user?.id, role: req.user?.role }),
+          details: { filterUserId: filterUserId ?? "all", count: rows.length },
+        });
+      }
+      res.json({ items: rows.map((p) => projectPersisted(p, security, role)) });
+    } catch {
+      res.status(503).json({ error: "history_unavailable" });
+    }
+  });
+
+  // Detalhe por correlationId. vendedor so acessa as proprias (404 senao);
+  // analista/admin acessam qualquer, com auditoria de acesso a terceiros.
+  router.get("/results/:correlationId", async (req, res) => {
+    const parse = ResultParamSchema.safeParse(req.params);
+    if (!parse.success) {
+      res.status(400).json({ error: "invalid_input" });
+      return;
+    }
+    const role = req.user?.role;
+    const priv = canSeeTechnicalDetails(security, role as any);
+    try {
+      const found = await service.getResult(parse.data.correlationId);
+      if (!found) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      const owner = found.context?.userId;
+      if (!priv && owner !== req.user!.id) {
+        // nao revela existencia de consulta de terceiros ao vendedor.
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      if (priv && owner !== req.user!.id) {
+        security.audit.write({
+          ts: new Date().toISOString(),
+          scope: "makscore",
+          type: "result.access",
+          severity: "info",
+          ...buildAuditContext(req, { userId: req.user?.id, role: req.user?.role }),
+          details: { correlationId: found.correlationId, ownerUserId: owner ?? null },
+        });
+      }
+      res.json(projectPersisted(found, security, role));
+    } catch {
+      res.status(503).json({ error: "result_unavailable" });
     }
   });
 
