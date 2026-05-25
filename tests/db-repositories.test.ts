@@ -73,11 +73,12 @@ test("migrations: aplica e e idempotente", async () => {
     "0001_init",
     "0002_makscore_audit",
     "0003_makscore_results",
+    "0004_makscore_review_events",
   ]);
   const second = await runMigrations(exec);
   assert.deepEqual(second, []);
   const r = await exec.query("SELECT version FROM schema_migrations");
-  assert.equal(r.rows.length, 3);
+  assert.equal(r.rows.length, 4);
 });
 
 test("assertSchemaReady: falha sem migrations, ok depois", async () => {

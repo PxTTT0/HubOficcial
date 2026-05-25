@@ -112,6 +112,28 @@ CREATE INDEX IF NOT EXISTS makscore_results_hash_idx ON makscore_results (cnpj_h
 CREATE INDEX IF NOT EXISTS makscore_results_user_idx ON makscore_results (user_id, created_at_ms);
 `,
   },
+  {
+    version: "0004_makscore_review_events",
+    sql: `
+-- Trilha APPEND-ONLY da analise manual. makscore_results guarda o estado
+-- ATUAL da review; esta tabela guarda cada transicao (rastreabilidade).
+-- A decisao automatica (outcome/primary_rule/rule_hits) nunca e alterada.
+-- note pode ter contexto comercial sensivel: fica SO aqui (nunca no
+-- security audit). Nunca contem CNPJ aberto.
+CREATE TABLE IF NOT EXISTS makscore_review_events (
+  id             bigserial PRIMARY KEY,
+  correlation_id text   NOT NULL,
+  from_status    text   NOT NULL,
+  to_status      text   NOT NULL,
+  reviewer_id    text   NOT NULL,
+  note           text,
+  created_at_ms  bigint NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS makscore_review_events_corr_idx
+  ON makscore_review_events (correlation_id, created_at_ms);
+`,
+  },
 ];
 
 export const LATEST_MIGRATION_VERSION =

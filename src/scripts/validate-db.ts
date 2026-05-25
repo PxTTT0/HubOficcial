@@ -154,8 +154,34 @@ async function main(): Promise<void> {
     if (JSON.stringify(colCheck.rows[0]).includes("11222333000181")) {
       fail("CNPJ aberto presente em makscore_results");
     }
+    // ── review manual: estado + trilha append-only (transacao) ────────
+    const rev1 = await resultsRepo.applyReview({
+      correlationId: "mk-new",
+      toStatus: "pending",
+      reviewerId: "ana-validate",
+      note: "ctx comercial",
+    });
+    if (rev1?.fromStatus !== "none") fail("review fromStatus inicial != none");
+    if (rev1?.record.reviewStatus !== "pending") fail("review nao aplicou pending");
+    if (rev1?.record.outcome !== "aprovado") fail("review alterou outcome automatico");
+    const rev2 = await resultsRepo.applyReview({
+      correlationId: "mk-new",
+      toStatus: "approved",
+      reviewerId: "ana-validate",
+    });
+    if (rev2?.record.reviewStatus !== "approved") fail("re-review nao aplicou approved");
+    const events = await resultsRepo.listReviewEvents("mk-new");
+    if (events.length !== 2) fail("trilha review nao e append-only", String(events.length));
+    if (events[0].toStatus !== "pending" || events[1].toStatus !== "approved") {
+      fail("ordem da trilha incorreta");
+    }
+    const evCols = await exec.query("SELECT * FROM makscore_review_events WHERE correlation_id = $1", ["mk-new"]);
+    if (JSON.stringify(evCols.rows).includes("11222333000181")) {
+      fail("CNPJ aberto presente em makscore_review_events");
+    }
     await exec.query("DELETE FROM makscore_results WHERE cnpj_hash = $1", [cnpjHash]);
-    ok("makscore_results append-only + cache + sem CNPJ aberto ok");
+    await exec.query("DELETE FROM makscore_review_events WHERE correlation_id = $1", ["mk-new"]);
+    ok("makscore_results append-only + cache + review trilha + sem CNPJ aberto ok");
 
     // ── cleanup ────────────────────────────────────────────────────────
     await exec.query("DELETE FROM users WHERE id = $1", [TEST_ID]);

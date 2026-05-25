@@ -92,9 +92,32 @@ export interface MakScoreResult {
   context?: MakScoreContext;
 }
 
-// Reservado para analise manual futura. Sem endpoint de override nesta
-// branch; default sempre 'none'.
 export type MakScoreReviewStatus = "none" | "pending" | "approved" | "rejected";
+
+// Status alvo aceitos no endpoint de review (nao permite voltar p/ none).
+export type MakScoreReviewTargetStatus = "pending" | "approved" | "rejected";
+
+export interface MakScoreReviewEvent {
+  correlationId: string;
+  fromStatus: MakScoreReviewStatus;
+  toStatus: MakScoreReviewStatus;
+  reviewerId: string;
+  note: string | null;
+  createdAtMs: number;
+}
+
+export interface ReviewActionInput {
+  correlationId: string;
+  toStatus: MakScoreReviewTargetStatus;
+  reviewerId: string;
+  note?: string | null;
+}
+
+/** Resultado de applyReview: registro atualizado + status anterior. */
+export interface ReviewApplied {
+  record: PersistedMakScore;
+  fromStatus: MakScoreReviewStatus;
+}
 
 export interface PersistedMakScore extends MakScoreResult {
   cnpjHash: string;
