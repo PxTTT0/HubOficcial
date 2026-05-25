@@ -10,6 +10,12 @@ export interface SqlResult<R = any> {
 
 export interface SqlExecutor {
   query<R = any>(text: string, params?: unknown[]): Promise<SqlResult<R>>;
+  /**
+   * Executa `fn` numa transacao (BEGIN/COMMIT, ROLLBACK em erro) usando
+   * uma unica conexao. Opcional: quando ausente (ex.: fakes de teste), o
+   * chamador faz fallback sequencial no proprio executor.
+   */
+  withTransaction?<T>(fn: (tx: SqlExecutor) => Promise<T>): Promise<T>;
 }
 
 export type DbBackingMode = "pg" | "memory";
@@ -76,6 +82,30 @@ export function createPgExecutor(cfg: DbConfig): SqlExecutor & { end(): Promise<
     async query<R = any>(text: string, params?: unknown[]): Promise<SqlResult<R>> {
       const r = await pool.query(text, params as any[]);
       return { rows: r.rows as R[], rowCount: r.rowCount };
+    },
+    async withTransaction<T>(fn: (tx: SqlExecutor) => Promise<T>): Promise<T> {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const tx: SqlExecutor = {
+          async query<R = any>(text: string, params?: unknown[]): Promise<SqlResult<R>> {
+            const r = await client.query(text, params as any[]);
+            return { rows: r.rows as R[], rowCount: r.rowCount };
+          },
+        };
+        const result = await fn(tx);
+        await client.query("COMMIT");
+        return result;
+      } catch (err) {
+        try {
+          await client.query("ROLLBACK");
+        } catch {
+          /* ignora falha de rollback */
+        }
+        throw err;
+      } finally {
+        client.release();
+      }
     },
     async end() {
       await pool.end();

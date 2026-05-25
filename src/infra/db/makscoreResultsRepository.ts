@@ -6,8 +6,11 @@ import {
 } from "../../modules/makscore/repository";
 import type {
   MakScoreResult,
+  MakScoreReviewEvent,
   MakScoreReviewStatus,
   PersistedMakScore,
+  ReviewActionInput,
+  ReviewApplied,
 } from "../../modules/makscore/types";
 
 interface ResultRow {
@@ -171,5 +174,69 @@ export class PgMakScoreResultsRepository implements MakScoreRepository {
       [limit, offset],
     );
     return r.rows.map(hydrate);
+  }
+
+  async applyReview(input: ReviewActionInput): Promise<ReviewApplied | null> {
+    const run = async (tx: SqlExecutor): Promise<ReviewApplied | null> => {
+      const cur = await tx.query<{ review_status: string }>(
+        "SELECT review_status FROM makscore_results WHERE correlation_id = $1",
+        [input.correlationId],
+      );
+      if (!cur.rows[0]) return null;
+      const fromStatus = cur.rows[0].review_status as MakScoreReviewStatus;
+      const now = Date.now();
+      // Estado atual (outcome/primary_rule/rule_hits NUNCA tocados aqui).
+      await tx.query(
+        `UPDATE makscore_results
+            SET review_status = $2, reviewer_id = $3, review_note = $4, reviewed_at = $5
+          WHERE correlation_id = $1`,
+        [
+          input.correlationId,
+          input.toStatus,
+          input.reviewerId,
+          input.note ?? null,
+          new Date(now).toISOString(),
+        ],
+      );
+      // Trilha append-only (mesma transacao).
+      await tx.query(
+        `INSERT INTO makscore_review_events
+           (correlation_id, from_status, to_status, reviewer_id, note, created_at_ms)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [input.correlationId, fromStatus, input.toStatus, input.reviewerId, input.note ?? null, now],
+      );
+      const updated = await tx.query<ResultRow>(
+        `${SELECT} WHERE correlation_id = $1`,
+        [input.correlationId],
+      );
+      return { record: hydrate(updated.rows[0]), fromStatus };
+    };
+    // Atomicidade real no Postgres; fallback sequencial em fakes (pg-mem).
+    return this.exec.withTransaction ? this.exec.withTransaction(run) : run(this.exec);
+  }
+
+  async listReviewEvents(correlationId: string): Promise<MakScoreReviewEvent[]> {
+    const r = await this.exec.query<{
+      correlation_id: string;
+      from_status: string;
+      to_status: string;
+      reviewer_id: string;
+      note: string | null;
+      created_at_ms: string | number;
+    }>(
+      `SELECT correlation_id, from_status, to_status, reviewer_id, note, created_at_ms
+         FROM makscore_review_events
+        WHERE correlation_id = $1
+        ORDER BY created_at_ms ASC, id ASC`,
+      [correlationId],
+    );
+    return r.rows.map((row) => ({
+      correlationId: row.correlation_id,
+      fromStatus: row.from_status as MakScoreReviewStatus,
+      toStatus: row.to_status as MakScoreReviewStatus,
+      reviewerId: row.reviewer_id,
+      note: row.note,
+      createdAtMs: Number(row.created_at_ms),
+    }));
   }
 }

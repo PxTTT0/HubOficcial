@@ -12,7 +12,10 @@ import {
 import type {
   MakScoreContext,
   MakScoreResult,
+  MakScoreReviewEvent,
   PersistedMakScore,
+  ReviewActionInput,
+  ReviewApplied,
 } from "./types";
 import {
   InMemoryAuditSink,
@@ -54,6 +57,19 @@ export class MakScoreService {
   /** Detalhe por correlationId. RBAC/projeção ficam na camada de rota. */
   getResult(correlationId: string): Promise<PersistedMakScore | null> {
     return this.repo.findByCorrelationId(correlationId);
+  }
+
+  /**
+   * Aplica análise manual (atômico: estado + trilha). RBAC/auditoria
+   * ficam na rota. Retorna null se o correlationId não existir.
+   */
+  review(input: ReviewActionInput): Promise<ReviewApplied | null> {
+    return this.repo.applyReview(input);
+  }
+
+  /** Trilha de eventos de review (analista/admin). */
+  reviewEvents(correlationId: string): Promise<MakScoreReviewEvent[]> {
+    return this.repo.listReviewEvents(correlationId);
   }
 
   // Auditoria funcional e best-effort: DB e assincrono e uma falha de

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { canSeeTechnicalDetails, requireAuth, requireRole } from "./auth";
 import { onlyDigits } from "./cnpj";
@@ -27,6 +28,11 @@ const HistorySchema = z.object({
 
 const ResultParamSchema = z.object({
   correlationId: z.string().uuid(),
+});
+
+const ReviewActionSchema = z.object({
+  status: z.enum(["pending", "approved", "rejected"]),
+  note: z.string().max(1000).optional(),
 });
 
 // O MakScore v1 e usado 100% por usuarios internos. A separacao
@@ -222,6 +228,100 @@ export function buildMakScoreRouter(
       res.json(projectPersisted(found, security, role));
     } catch {
       res.status(503).json({ error: "result_unavailable" });
+    }
+  });
+
+  // Guarda de review: exige analista/admin (mesmos papeis de requireRole)
+  // e AUDITA a negacao como review.denied (sem CNPJ). Vendedor nao altera
+  // nem le review-events.
+  const requireReviewer = (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): void => {
+    const role = req.user?.role;
+    if (role === "analista" || role === "admin") {
+      next();
+      return;
+    }
+    security.audit.write({
+      ts: new Date().toISOString(),
+      scope: "makscore",
+      type: "review.denied",
+      severity: "warn",
+      outcome: "failure",
+      reason: "role_not_allowed",
+      ...buildAuditContext(req, { userId: req.user?.id, role: req.user?.role }),
+    });
+    res.status(403).json({ error: "forbidden" });
+  };
+
+  // Analise manual: marca pending/approved/rejected. Atomico (estado +
+  // trilha). Nao altera outcome/primaryRule/ruleHits automaticos.
+  router.post("/results/:correlationId/review", requireReviewer, async (req, res) => {
+    const pp = ResultParamSchema.safeParse(req.params);
+    const pb = ReviewActionSchema.safeParse(req.body);
+    if (!pp.success || !pb.success) {
+      res.status(400).json({ error: "invalid_input" });
+      return;
+    }
+    const role = req.user?.role;
+    try {
+      const applied = await service.review({
+        correlationId: pp.data.correlationId,
+        toStatus: pb.data.status,
+        reviewerId: req.user!.id,
+        note: pb.data.note ?? null,
+      });
+      if (!applied) {
+        security.audit.write({
+          ts: new Date().toISOString(),
+          scope: "makscore",
+          type: "review.not_found",
+          severity: "info",
+          outcome: "failure",
+          ...buildAuditContext(req, { userId: req.user?.id, role: req.user?.role }),
+          details: { correlationId: pp.data.correlationId },
+        });
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      // Auditoria SEM CNPJ e SEM note (note pode ter contexto comercial).
+      security.audit.write({
+        ts: new Date().toISOString(),
+        scope: "makscore",
+        type: "review.changed",
+        severity: "info",
+        outcome: "success",
+        ...buildAuditContext(req, { userId: req.user?.id, role: req.user?.role }),
+        details: {
+          correlationId: applied.record.correlationId,
+          fromStatus: applied.fromStatus,
+          toStatus: applied.record.reviewStatus,
+        },
+      });
+      res.json(projectPersisted(applied.record, security, role));
+    } catch {
+      res.status(503).json({ error: "review_unavailable" });
+    }
+  });
+
+  // Trilha de eventos da review (analista/admin). Sem CNPJ aberto.
+  router.get("/results/:correlationId/review-events", requireReviewer, async (req, res) => {
+    const parse = ResultParamSchema.safeParse(req.params);
+    if (!parse.success) {
+      res.status(400).json({ error: "invalid_input" });
+      return;
+    }
+    try {
+      const found = await service.getResult(parse.data.correlationId);
+      if (!found) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      res.json({ events: await service.reviewEvents(parse.data.correlationId) });
+    } catch {
+      res.status(503).json({ error: "review_events_unavailable" });
     }
   });
 
