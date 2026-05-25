@@ -217,6 +217,42 @@ h3 { font-size: 1.1rem; }
 .mt-14 { margin-top: 14px; }
 .mt-16 { margin-top: 16px; }
 
+/* Gauges (medidores). Largura do preenchimento via --v (0..1) setado
+   por JS com CSSOM setProperty -> compativel com CSP estrita. */
+.gauges { display: grid; gap: 10px; }
+.gauge { display: grid; gap: 6px; }
+.gauge .gv { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.gauge .track { height: 10px; border-radius: 999px; background: rgba(18,33,27,.08); overflow: hidden; }
+.gauge .fill { height: 100%; width: calc(var(--v, 0) * 100%); border-radius: 999px; background: var(--brand); transition: width .35s ease; }
+.gauge[data-band="low"] .fill { background: var(--danger); }
+.gauge[data-band="medium"] .fill { background: var(--warn); }
+.gauge[data-band="high"] .fill { background: var(--ok); }
+
+/* Stepper do questionario */
+.q-steps { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.q-step {
+  flex: 0 0 auto;
+  display: inline-flex; gap: 8px; align-items: center;
+  border-radius: 14px;
+  background: rgba(255,255,255,.6);
+  color: var(--ink);
+  box-shadow: none;
+  border: 1px solid var(--line);
+  padding: 8px 12px;
+}
+.q-step.active { background: rgba(15,107,79,.1); border-color: rgba(15,107,79,.35); }
+.q-step .pts { color: var(--brand); }
+.q-section { margin-top: 12px; }
+.q-footer { margin-top: 14px; }
+.q-footer button { padding: 8px 12px; }
+
+/* Rule hits (detalhe tecnico para analista/admin) */
+.rulehits { display: grid; gap: 8px; margin-top: 8px; }
+.rulehit { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; background: rgba(255,255,255,.5); }
+
+/* Acessibilidade */
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
   .side { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }

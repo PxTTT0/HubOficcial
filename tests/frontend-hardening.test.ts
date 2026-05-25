@@ -59,9 +59,19 @@ test("assets externos servidos: app.js e app.css", { concurrency: false }, async
     assert.equal(js.status, 200);
     const jsBody = await js.text();
     assert.match(jsBody, /function esc\(/, "helper de escape presente");
+    // UX: gauges + stepper presentes
+    assert.match(jsBody, /renderGaugeInto/, "render de gauge presente");
+    assert.match(jsBody, /qSections/, "stepper do questionario presente");
+    // gauge dinamico via CSSOM (CSP-safe), nunca setAttribute('style')/cssText
+    assert.match(jsBody, /setProperty\("--v"/, "gauge usa CSSOM setProperty");
+    assert.ok(!/setAttribute\(\s*["']style["']/.test(jsBody), "sem setAttribute('style')");
+    assert.ok(!/\.style\.cssText/.test(jsBody), "sem style.cssText");
 
     const css = await fetch(`${server.base}/makscore/app.css`);
     assert.equal(css.status, 200);
+    const cssBody = await css.text();
+    assert.match(cssBody, /\.gauge\b/, "estilos de gauge presentes");
+    assert.match(cssBody, /\.q-step\b/, "estilos de stepper presentes");
   } finally {
     restore(snap);
     await server.close();
