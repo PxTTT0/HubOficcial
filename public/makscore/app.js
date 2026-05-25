@@ -491,6 +491,7 @@ function renderResult(d) {
   $("resultRisk").textContent = d.riskLevel || "-";
   $("resultValid").textContent = fmtDate(d.validUntil);
   $("resultAction").textContent = d.recommendedAction || "";
+  renderEffective($("resultEffective"), d);
   renderScoreGauges(d, "resultGauges");
   $("resultFacts").innerHTML = factsHtml(d);
   renderReasons($("resultReasons"), d.reasons);
@@ -522,15 +523,30 @@ function renderDetail(d) {
       <div class="metric"><span>Risco</span><strong>${esc(d.riskLevel || "-")}</strong></div>
       <div class="metric"><span>Review</span><strong>${esc(d.reviewStatus || "none")}</strong></div>
     </div>
+    <div id="detailEffective" class="mt-14"></div>
     <p>${esc(d.recommendedAction || "")}</p>
     ${factsHtml(d)}
     <div><h3>Motivos</h3><ul class="reasons">${(d.reasons || []).map((r) => `<li>${esc(r.label)}${r.critical ? " (crítico)" : ""}</li>`).join("") || "<li class='muted'>Sem motivos relevantes</li>"}</ul></div>
     <div id="detailGauges" class="gauges mt-14"></div>
     <div id="detailTech"></div>
   `;
+  renderEffective($("detailEffective"), d);
   renderScoreGauges(d, "detailGauges");
   renderTech($("detailTech"), d);
   show($("reviewPanel"), canReview());
+}
+
+// Decisao efetiva (automatica + analise manual). Destaque para o usuario.
+function renderEffective(container, d) {
+  if (!container) return;
+  const e = d.effectiveDecision;
+  if (!e) { container.innerHTML = ""; return; }
+  container.innerHTML =
+    `<div class="effective">`
+    + `<span class="muted small">Decisão efetiva</span>`
+    + `<span class="pill ${esc(e.status)}">${esc(e.label)}</span>`
+    + (e.source === "manual" ? `<span class="pts">análise manual</span>` : "")
+    + `</div>`;
 }
 
 function factsHtml(d) {

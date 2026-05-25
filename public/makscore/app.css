@@ -250,6 +250,13 @@ h3 { font-size: 1.1rem; }
 .rulehits { display: grid; gap: 8px; margin-top: 8px; }
 .rulehit { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; background: rgba(255,255,255,.5); }
 
+/* Decisao efetiva (destaque) */
+.effective {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px;
+  background: rgba(255,255,255,.5);
+}
+
 /* Acessibilidade */
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 
