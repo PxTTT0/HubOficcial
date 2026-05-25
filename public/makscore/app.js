@@ -7,6 +7,8 @@ const state = {
   currentView: "query",
   // Schema do questionario (fonte unica vinda do backend).
   questionnaire: null,
+  // Secao ativa do stepper do questionario.
+  qStep: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -49,6 +51,47 @@ function qCheckHtml(group, key, label, pts) {
   const ptsLabel = typeof pts === "number" ? (pts > 0 ? `+${pts}` : String(pts)) : "bloqueio";
   return `<label class="check"><input type="checkbox" data-q-group="${esc(group)}" data-q-key="${esc(key)}" /> <span>${esc(label)}</span><span class="pts">${esc(ptsLabel)}</span></label>`;
 }
+// ── Gauges (medidores visuais). Valor dinamico via CSSOM setProperty
+//    (compativel com CSP estrita; nunca style="" inline). ──────────────
+function gaugeBand(ratio) {
+  return ratio >= 0.7 ? "high" : ratio >= 0.4 ? "medium" : "low";
+}
+function renderGaugeInto(container, label, value, max, valueText) {
+  container.innerHTML = "";
+  const ratio = typeof value === "number" && max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
+  const wrap = document.createElement("div");
+  wrap.className = "gauge";
+  wrap.dataset.band = gaugeBand(ratio);
+  const head = document.createElement("div");
+  head.className = "gv";
+  const lab = document.createElement("span");
+  lab.className = "muted small";
+  lab.textContent = label;
+  const val = document.createElement("strong");
+  val.textContent = valueText != null ? valueText : (value ?? "-");
+  head.append(lab, val);
+  const track = document.createElement("div");
+  track.className = "track";
+  const fill = document.createElement("div");
+  fill.className = "fill";
+  fill.style.setProperty("--v", String(ratio));
+  track.appendChild(fill);
+  wrap.append(head, track);
+  container.appendChild(wrap);
+}
+
+// Secoes do stepper do questionario (a partir do schema).
+function qSections() {
+  const s = state.questionnaire;
+  const out = [{ id: "bloqueios", title: "Bloqueios", group: "bloqueios", items: s.blockers, kind: "count" }];
+  for (const [id, p] of Object.entries(s.pillars)) {
+    out.push({ id, title: `${id}. ${p.title}`, group: "pilares", items: p.items, max: p.max, kind: "points" });
+  }
+  out.push({ id: "agravantes", title: "Agravantes", group: "agravantes", items: s.aggravators, kind: "count" });
+  out.push({ id: "mitigadores", title: "Mitigadores", group: "mitigadores", items: s.mitigators, kind: "count" });
+  return out;
+}
+
 function renderQuestionnaire() {
   const box = $("questionnaireBox");
   const schema = state.questionnaire;
@@ -56,27 +99,60 @@ function renderQuestionnaire() {
     box.innerHTML = "<div class='muted small'>Carregando questionário…</div>";
     return;
   }
+  const sections = qSections();
+  if (!state.qStep || !sections.some((s) => s.id === state.qStep)) state.qStep = sections[0].id;
+
+  const nav = sections.map((s) =>
+    `<button type="button" class="q-step" data-step="${esc(s.id)}"><span>${esc(s.title)}</span><span class="pts" data-step-progress="${esc(s.id)}"></span></button>`
+  ).join("");
+
+  const content = sections.map((s) =>
+    `<div class="q-section${s.id === state.qStep ? "" : " hide"}" data-section="${esc(s.id)}">
+       <div class="checks">${s.items.map((i) => qCheckHtml(s.group, i.key, i.label, i.pts)).join("")}</div>
+     </div>`
+  ).join("");
+
   box.innerHTML = `
-    <details class="question-group" open>
-      <summary>Bloqueios automáticos <span class="pts">reprova</span></summary>
-      <div class="checks">${schema.blockers.map((b) => qCheckHtml("bloqueios", b.key, b.label)).join("")}</div>
-    </details>
-    ${Object.entries(schema.pillars).map(([id, p]) => `
-      <details class="question-group">
-        <summary>${esc(id)}. ${esc(p.title)} <span class="pts">max ${esc(p.max)}</span></summary>
-        <div class="checks">${p.items.map((i) => qCheckHtml("pilares", i.key, i.label, i.pts)).join("")}</div>
-      </details>
-    `).join("")}
-    <details class="question-group">
-      <summary>Agravantes <span class="pts">reduzem</span></summary>
-      <div class="checks">${schema.aggravators.map((i) => qCheckHtml("agravantes", i.key, i.label, i.pts)).join("")}</div>
-    </details>
-    <details class="question-group">
-      <summary>Mitigadores <span class="pts">bonus</span></summary>
-      <div class="checks">${schema.mitigators.map((i) => qCheckHtml("mitigadores", i.key, i.label, i.pts)).join("")}</div>
-    </details>
+    <div class="q-steps">${nav}</div>
+    ${content}
+    <div class="actions between q-footer">
+      <div class="actions">
+        <button type="button" class="ghost" data-q-nav="prev">‹ Anterior</button>
+        <button type="button" class="ghost" data-q-nav="next">Próximo ›</button>
+      </div>
+      <div class="actions">
+        <button type="button" class="ghost" data-q-bulk="mark">Marcar seção</button>
+        <button type="button" class="ghost" data-q-bulk="clear">Limpar seção</button>
+      </div>
+    </div>
   `;
+
+  box.querySelectorAll(".q-step").forEach((b) => b.addEventListener("click", () => setQStep(b.dataset.step)));
+  box.querySelectorAll("[data-q-nav]").forEach((b) => b.addEventListener("click", () => stepBy(b.dataset.qNav === "next" ? 1 : -1)));
+  box.querySelectorAll("[data-q-bulk]").forEach((b) => b.addEventListener("click", () => bulkSection(b.dataset.qBulk === "mark")));
   box.querySelectorAll("input[type=checkbox]").forEach((i) => i.addEventListener("change", updateQuestionnaireScore));
+  setQStep(state.qStep);
+  updateQuestionnaireScore();
+}
+
+function setQStep(id) {
+  state.qStep = id;
+  document.querySelectorAll(".q-section").forEach((el) => show(el, el.dataset.section === id));
+  document.querySelectorAll(".q-step").forEach((b) => {
+    const active = b.dataset.step === id;
+    b.classList.toggle("active", active);
+    if (active) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
+  });
+}
+function stepBy(delta) {
+  const ids = qSections().map((s) => s.id);
+  const i = Math.max(0, Math.min(ids.length - 1, ids.indexOf(state.qStep) + delta));
+  setQStep(ids[i]);
+}
+function bulkSection(checked) {
+  const sec = document.querySelector(`.q-section[data-section="${state.qStep}"]`);
+  if (!sec) return;
+  sec.querySelectorAll("input[type=checkbox]").forEach((i) => { i.checked = checked; });
   updateQuestionnaireScore();
 }
 function collectQuestionnaire() {
@@ -108,13 +184,31 @@ function scoreQuestionnaireLocal(answers) {
   return { total, label: tier.label, classification: tier.classification, hasBlock };
 }
 function updateQuestionnaireScore() {
-  const max = state.questionnaire?.maxTotal ?? 250;
-  const s = scoreQuestionnaireLocal(collectQuestionnaire());
+  const schema = state.questionnaire;
+  const max = schema?.maxTotal ?? 250;
+  const answers = collectQuestionnaire();
+  const s = scoreQuestionnaireLocal(answers);
   $("questionnaireScore").textContent = `${s.label} · ${s.total} / ${max}`;
   const cls = s.hasBlock || s.classification === "E"
     ? "reprovado"
     : (s.classification === "C" || s.classification === "D") ? "exige_analise" : "aprovado";
   $("questionnaireScore").className = "pill " + cls;
+  const g = $("questionnaireGauge");
+  if (g) renderGaugeInto(g, "Pontuação Makfil", s.total, max, `${s.total} / ${max}`);
+  if (!schema) return;
+  // Progresso por secao no stepper.
+  for (const sec of qSections()) {
+    const badge = document.querySelector(`[data-step-progress="${sec.id}"]`);
+    if (!badge) continue;
+    const ans = answers[sec.group] || {};
+    if (sec.kind === "points") {
+      const pts = sec.items.reduce((sum, it) => sum + (ans[it.key] ? it.pts : 0), 0);
+      badge.textContent = `${pts}/${sec.max}`;
+    } else {
+      const n = sec.items.filter((it) => ans[it.key]).length;
+      badge.textContent = n ? String(n) : "";
+    }
+  }
 }
 async function loadQuestionnaireSchema() {
   if (!state.questionnaire) {
@@ -397,9 +491,26 @@ function renderResult(d) {
   $("resultRisk").textContent = d.riskLevel || "-";
   $("resultValid").textContent = fmtDate(d.validUntil);
   $("resultAction").textContent = d.recommendedAction || "";
+  renderScoreGauges(d, "resultGauges");
   $("resultFacts").innerHTML = factsHtml(d);
   renderReasons($("resultReasons"), d.reasons);
   renderTech($("techBox"), d);
+}
+
+// Gauges de score E-POSI (0-1000) e questionario (0-250).
+function renderScoreGauges(d, containerId) {
+  const c = $(containerId);
+  if (!c) return;
+  c.innerHTML = "";
+  const scoreWrap = document.createElement("div");
+  c.appendChild(scoreWrap);
+  renderGaugeInto(scoreWrap, "Score E-POSI", typeof d.score === "number" ? d.score : null, 1000, d.score ?? "-");
+  const q = d.questionnaire?.score;
+  if (q) {
+    const qWrap = document.createElement("div");
+    c.appendChild(qWrap);
+    renderGaugeInto(qWrap, "Questionário Makfil", q.total, 250, `${q.label} · ${q.total}/250`);
+  }
 }
 
 function renderDetail(d) {
@@ -414,8 +525,10 @@ function renderDetail(d) {
     <p>${esc(d.recommendedAction || "")}</p>
     ${factsHtml(d)}
     <div><h3>Motivos</h3><ul class="reasons">${(d.reasons || []).map((r) => `<li>${esc(r.label)}${r.critical ? " (crítico)" : ""}</li>`).join("") || "<li class='muted'>Sem motivos relevantes</li>"}</ul></div>
+    <div id="detailGauges" class="gauges mt-14"></div>
     <div id="detailTech"></div>
   `;
+  renderScoreGauges(d, "detailGauges");
   renderTech($("detailTech"), d);
   show($("reviewPanel"), canReview());
 }
@@ -450,14 +563,27 @@ function renderTech(box, d) {
   const showTech = canSeeTech() && ("primaryRule" in d || "ruleHits" in d || "errorCode" in d || q);
   show(box, showTech);
   if (!showTech) return;
+  const hits = d.ruleHits || [];
   box.innerHTML = `
     <h3>Detalhes técnicos</h3>
     ${q ? `<div class="kv"><span>Questionário</span><strong>${esc(q.classification)} · ${esc(q.total)}/250 · ${esc(q.decision)}</strong></div>` : ""}
     <div class="kv"><span>Regra principal</span><strong>${esc(d.primaryRule || "-")}</strong></div>
     <div class="kv"><span>ErrorCode</span><strong>${esc(d.errorCode || "-")}</strong></div>
     <div class="kv"><span>ErrorMessage</span><strong>${esc(d.errorMessage || "-")}</strong></div>
-    <div class="kv"><span>Rule hits</span><strong>${esc((d.ruleHits || []).length)}</strong></div>
+    <h3 class="mt-14">Regras disparadas (${esc(hits.length)})</h3>
+    ${hits.length
+      ? `<div class="rulehits">${hits.map((h) => `
+          <div class="rulehit" data-sev="${esc(h.severity)}">
+            <div class="actions between"><strong>${esc(h.code)}</strong><span class="pill ${esc(sevClass(h.severity))}">${esc(h.severity)}</span></div>
+            <div class="small">${esc(h.explanation || "")}</div>
+            <div class="small muted">${esc(h.impact || "")}</div>
+          </div>`).join("")}</div>`
+      : "<div class='muted small'>Nenhuma regra disparada.</div>"}
   `;
+}
+// Mapeia severidade da regra para a paleta de pills.
+function sevClass(sev) {
+  return sev === "block" ? "reprovado" : sev === "review" ? "exige_analise" : sev === "approve" ? "aprovado" : "indeterminado";
 }
 
 async function submitReview(e) {
