@@ -1,7 +1,15 @@
 import type { EposiProduct } from "./config";
 import type { RiskLevel, RuleHit } from "./decision/types";
+import type {
+  MakScoreQuestionnaireAnswers,
+  MakScoreQuestionnaireScore,
+} from "./questionnaire";
 
 export type { RiskLevel, RuleHit } from "./decision/types";
+export type {
+  MakScoreQuestionnaireAnswers,
+  MakScoreQuestionnaireScore,
+} from "./questionnaire";
 
 export type MakfilOutcome =
   | "aprovado"
@@ -61,6 +69,9 @@ export interface MakScoreContext {
   // Prazo/duracao da operacao (meses). Reservado para regras futuras
   // de ticket; ausencia nao afeta a decisao.
   durationMonths?: number;
+  // Questionario operacional Makfil. Quando presente, alimenta o
+  // Decision Engine e fica persistido junto ao resultado.
+  questionnaire?: MakScoreQuestionnaireAnswers;
   // Reservado para evolucao futura: parecer manual quando
   // outcome === "exige_analise". NAO altera o outcome automatico.
   parecerManual?: string;
@@ -90,6 +101,10 @@ export interface MakScoreResult {
     dataAbertura: string | null;
   };
   context?: MakScoreContext;
+  questionnaire?: {
+    answers: MakScoreQuestionnaireAnswers;
+    score: MakScoreQuestionnaireScore;
+  };
 }
 
 export type MakScoreReviewStatus = "none" | "pending" | "approved" | "rejected";

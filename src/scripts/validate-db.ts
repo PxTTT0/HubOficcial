@@ -17,6 +17,7 @@ import { PgUserRepository, seedBootstrapUsers } from "../infra/db/userRepository
 import { PgMakScoreResultsRepository } from "../infra/db/makscoreResultsRepository";
 import { requireEncryptionKey } from "../infra/db/crypto";
 import { hashCnpj } from "../modules/makscore/repository";
+import { MAK_SCORE_QUESTIONNAIRE_VERSION } from "../modules/makscore/questionnaire";
 import type { PersistedMakScore } from "../modules/makscore/types";
 
 const TEST_ID = "validate-db-user";
@@ -135,6 +136,27 @@ async function main(): Promise<void> {
       sourceIsMock: true,
       cadastral: { status: "ativa", razaoSocial: "EMP", cnaePrincipal: null, dataAbertura: null },
       context: { userId: "validate-db-user" },
+      questionnaire: {
+        answers: {
+          version: MAK_SCORE_QUESTIONNAIRE_VERSION,
+          bloqueios: {},
+          pilares: {},
+          agravantes: {},
+          mitigadores: {},
+        },
+        score: {
+          version: MAK_SCORE_QUESTIONNAIRE_VERSION,
+          total: 0,
+          classification: "E",
+          label: "Makfil E",
+          decision: "Reprovar",
+          hasBloqueio: false,
+          pillarTotals: { A: 0, B: 0, C: 0, D: 0, E: 0 },
+          basePilares: 0,
+          agravantesTotal: 0,
+          mitigadoresTotal: 0,
+        },
+      },
       cnpjHash,
       createdAtMs,
       expiresAtMs: createdAtMs + 3_600_000,
@@ -153,6 +175,16 @@ async function main(): Promise<void> {
     );
     if (JSON.stringify(colCheck.rows[0]).includes("11222333000181")) {
       fail("CNPJ aberto presente em makscore_results");
+    }
+    const persistedQuestionnaire =
+      typeof colCheck.rows[0].questionnaire === "string"
+        ? JSON.parse(colCheck.rows[0].questionnaire)
+        : colCheck.rows[0].questionnaire;
+    if (
+      persistedQuestionnaire?.answers?.version !== MAK_SCORE_QUESTIONNAIRE_VERSION ||
+      persistedQuestionnaire?.score?.classification !== "E"
+    ) {
+      fail("questionario MakScore nao persistiu corretamente");
     }
     // ── review manual: estado + trilha append-only (transacao) ────────
     const rev1 = await resultsRepo.applyReview({

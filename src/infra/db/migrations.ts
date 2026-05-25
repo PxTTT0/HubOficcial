@@ -134,6 +134,16 @@ CREATE INDEX IF NOT EXISTS makscore_review_events_corr_idx
   ON makscore_review_events (correlation_id, created_at_ms);
 `,
   },
+  {
+    version: "0005_makscore_questionnaire",
+    sql: `
+-- Questionario operacional Makfil usado para compor o Decision Engine.
+-- Guardado como JSONB versionado junto ao resultado append-only.
+-- Nao deve conter CNPJ aberto, payload E-POSI, token ou credenciais.
+ALTER TABLE makscore_results
+  ADD COLUMN IF NOT EXISTS questionnaire jsonb;
+`,
+  },
 ];
 
 export const LATEST_MIGRATION_VERSION =

@@ -1,4 +1,5 @@
 import { lookupErrorCode } from "../errorCodes";
+import { scoreQuestionnaire } from "../questionnaire";
 import type { MakfilRule, RuleHit } from "./types";
 
 /**
@@ -22,6 +23,10 @@ const P = {
   restritivo: 65,
   reasonCritico: 60,
   cadastralDesconhecida: 55,
+  questionnaireBlock: 88,
+  questionnaireReprove: 80,
+  questionnaireReview: 52,
+  questionnaireApprove: 12,
   ticket: 50,
   scoreAprovado: 10,
   scoreIntermediario: 5,
@@ -74,7 +79,60 @@ export const MAKFIL_RULES: MakfilRule[] = [
     },
   },
 
-  // 3) Score ausente -> exige analise (falha ambigua).
+  // 3) Questionario operacional Makfil: score interno A-E, bloqueios,
+  //    agravantes e mitigadores. E-POSI continua como override quando
+  //    retorna erro; bloqueios do questionario reprovam antes de reviews.
+  {
+    id: "questionnaire-score",
+    evaluate({ input }): RuleHit | null {
+      if (!input.questionnaire) return null;
+      const score = scoreQuestionnaire(input.questionnaire);
+      if (score.classification === "bloqueio") {
+        return {
+          code: "questionnaire:bloqueio",
+          category: "questionnaire",
+          severity: "block",
+          outcome: "reprovado",
+          explanation: "Questionario Makfil possui bloqueio automatico marcado.",
+          impact: "Reprova a operacao independentemente do score operacional.",
+          priority: P.questionnaireBlock,
+        };
+      }
+      if (score.classification === "E") {
+        return {
+          code: "questionnaire:makfil_e",
+          category: "questionnaire",
+          severity: "block",
+          outcome: "reprovado",
+          explanation: `Questionario Makfil totalizou ${score.total}/250 (${score.label}).`,
+          impact: "Reprova por pontuacao operacional insuficiente.",
+          priority: P.questionnaireReprove,
+        };
+      }
+      if (score.classification === "C" || score.classification === "D") {
+        return {
+          code: `questionnaire:makfil_${score.classification.toLowerCase()}`,
+          category: "questionnaire",
+          severity: "review",
+          outcome: "exige_analise",
+          explanation: `Questionario Makfil totalizou ${score.total}/250 (${score.label}).`,
+          impact: "Exige mitigacao/analise antes de prosseguir.",
+          priority: P.questionnaireReview,
+        };
+      }
+      return {
+        code: `questionnaire:makfil_${score.classification.toLowerCase()}`,
+        category: "questionnaire",
+        severity: "approve",
+        outcome: "aprovado",
+        explanation: `Questionario Makfil totalizou ${score.total}/250 (${score.label}).`,
+        impact: "Apoia aprovacao quando nao ha bloqueios ou reviews superiores.",
+        priority: P.questionnaireApprove,
+      };
+    },
+  },
+
+  // 4) Score ausente -> exige analise (falha ambigua).
   {
     id: "score-ausente",
     evaluate({ normalized }): RuleHit | null {
