@@ -25,9 +25,13 @@ function projectForRole(
   result: MakScoreResult,
   security: SecurityContext,
   role: string | undefined,
-): MakScoreResult | Omit<MakScoreResult, "errorCode" | "errorMessage" | "primaryRule"> {
+):
+  | MakScoreResult
+  | Omit<MakScoreResult, "errorCode" | "errorMessage" | "primaryRule" | "ruleHits"> {
   if (canSeeTechnicalDetails(security, role as any)) return result;
-  const { errorCode, errorMessage, primaryRule, ...rest } = result;
+  // riskLevel permanece (nao tecnico); ruleHits/errorCode/errorMessage/
+  // primaryRule ocultos para vendedor.
+  const { errorCode, errorMessage, primaryRule, ruleHits, ...rest } = result;
   return rest;
 }
 

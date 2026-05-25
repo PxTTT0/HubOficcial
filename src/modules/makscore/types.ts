@@ -1,4 +1,7 @@
 import type { EposiProduct } from "./config";
+import type { RiskLevel, RuleHit } from "./decision/types";
+
+export type { RiskLevel, RuleHit } from "./decision/types";
 
 export type MakfilOutcome =
   | "aprovado"
@@ -39,9 +42,13 @@ export interface NormalizedEposi {
 
 export interface MakfilDecision {
   outcome: MakfilOutcome;
+  // Nivel de risco derivado (aditivo).
+  riskLevel: RiskLevel;
   primaryRule: string;
   recommendedAction: string;
   translatedReasons: { code: string; label: string; critical: boolean }[];
+  // Regras que dispararam (tecnico; projetado so p/ analista/admin).
+  ruleHits: RuleHit[];
 }
 
 export interface MakScoreContext {
@@ -51,6 +58,9 @@ export interface MakScoreContext {
   // como reforco para `exige_analise` em risco intermediario.
   // Ausencia nao quebra a consulta.
   ticketPretendido?: number;
+  // Prazo/duracao da operacao (meses). Reservado para regras futuras
+  // de ticket; ausencia nao afeta a decisao.
+  durationMonths?: number;
   // Reservado para evolucao futura: parecer manual quando
   // outcome === "exige_analise". NAO altera o outcome automatico.
   parecerManual?: string;
@@ -62,9 +72,12 @@ export interface MakScoreResult {
   product: EposiProduct;
   score: number | null;
   outcome: MakfilOutcome;
+  riskLevel: RiskLevel;
   primaryRule: string;
   recommendedAction: string;
   reasons: { code: string; label: string; critical: boolean }[];
+  // Tecnico (projetado so p/ analista/admin).
+  ruleHits: RuleHit[];
   errorCode: string | null;
   errorMessage: string | null;
   validUntil: string;
