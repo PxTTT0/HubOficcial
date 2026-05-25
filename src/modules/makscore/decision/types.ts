@@ -22,6 +22,7 @@ export type RuleCategory =
   | "restritivo"
   | "reason"
   | "ticket"
+  | "questionnaire"
   | "recency_info";
 
 /**
@@ -34,6 +35,7 @@ export interface DecisionInput {
   proposalId?: string;
   ticketPretendido?: number;
   durationMonths?: number;
+  questionnaire?: import("../questionnaire").MakScoreQuestionnaireAnswers;
   commercialContext?: Record<string, string | number>;
 }
 
@@ -72,6 +74,7 @@ export function toDecisionInput(ctx?: MakScoreContext): DecisionInput {
     proposalId: ctx?.proposalId,
     ticketPretendido: ctx?.ticketPretendido,
     durationMonths: ctx?.durationMonths,
+    questionnaire: ctx?.questionnaire,
     // commercialContext intencionalmente ignorado nesta fase.
   };
 }

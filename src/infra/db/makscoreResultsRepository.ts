@@ -39,6 +39,7 @@ interface ResultRow {
   reviewer_id: string | null;
   review_note: string | null;
   reviewed_at: string | null;
+  questionnaire: unknown | null;
 }
 
 function asJson<T>(v: unknown): T {
@@ -68,6 +69,9 @@ function hydrate(row: ResultRow): PersistedMakScore {
     sourceIsMock: row.source_is_mock,
     cadastral: asJson<MakScoreResult["cadastral"]>(row.cadastral),
     context: Object.keys(context).length ? context : undefined,
+    questionnaire: row.questionnaire
+      ? asJson<PersistedMakScore["questionnaire"]>(row.questionnaire)
+      : undefined,
     cnpjHash: row.cnpj_hash,
     createdAtMs: Number(row.created_at_ms),
     expiresAtMs: Number(row.expires_at_ms),
@@ -83,7 +87,7 @@ const SELECT = `
          risk_level, primary_rule, recommended_action, reasons, rule_hits,
          cadastral, source_is_mock, error_code, error_message, proposal_id,
          user_id, valid_until, consulted_at, created_at_ms, expires_at_ms,
-         review_status, reviewer_id, review_note, reviewed_at
+         review_status, reviewer_id, review_note, reviewed_at, questionnaire
     FROM makscore_results`;
 
 /**
@@ -101,10 +105,10 @@ export class PgMakScoreResultsRepository implements MakScoreRepository {
          risk_level, primary_rule, recommended_action, reasons, rule_hits,
          cadastral, source_is_mock, error_code, error_message, proposal_id,
          user_id, valid_until, consulted_at, created_at_ms, expires_at_ms,
-         review_status, reviewer_id, review_note, reviewed_at
+         review_status, reviewer_id, review_note, reviewed_at, questionnaire
        ) VALUES (
          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-         $20,$21,$22,$23,$24,$25
+         $20,$21,$22,$23,$24,$25,$26
        )
        ON CONFLICT (correlation_id) DO NOTHING`,
       [
@@ -133,6 +137,7 @@ export class PgMakScoreResultsRepository implements MakScoreRepository {
         r.reviewerId ?? null,
         r.reviewNote ?? null,
         r.reviewedAt ?? null,
+        r.questionnaire ? JSON.stringify(r.questionnaire) : null,
       ],
     );
   }

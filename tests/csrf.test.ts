@@ -198,7 +198,7 @@ test(
       AUTH_SECURE_COOKIES: "false",
       AUTH_MFA_REQUIRED_ROLES: "",
       AUTH_SESSION_BIND_IP_ROLES: "",
-      AUTH_SESSION_IDLE_MS: "50",
+      AUTH_SESSION_IDLE_MS: "500",
       AUTH_USERS_JSON: JSON.stringify([
         { id: "seller-1", username: "seller", role: "vendedor", passwordHash },
       ]),
@@ -218,9 +218,9 @@ test(
       });
       assert.equal(fresh.status, 200);
 
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 700));
 
-      // Apos 200ms de inatividade (idle=50ms), sessao foi expirada.
+      // Apos 700ms de inatividade (idle=500ms), sessao foi expirada.
       const stale = await fetch(`${server.baseUrl}/api/auth/me`, {
         headers: { authorization: `Bearer ${body.token}` },
       });

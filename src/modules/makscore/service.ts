@@ -4,6 +4,7 @@ import type { EposiProduct, MakScoreConfig } from "./config";
 import type { EposiClient } from "./eposiClient";
 import { normalizeEposi } from "./normalizer";
 import { applyMakfilPolicy } from "./policy";
+import { scoreQuestionnaire } from "./questionnaire";
 import {
   hashCnpj,
   type MakScoreHistoryFilter,
@@ -109,7 +110,10 @@ export class MakScoreService {
       }),
     );
 
-    if (!input.forceRefresh) {
+    // O questionario altera a decisao MakScore. Reusar cache por CNPJ aqui
+    // poderia devolver uma aprovacao/reprovacao gerada com respostas antigas.
+    const hasQuestionnaireDecision = Boolean(input.context?.questionnaire);
+    if (!input.forceRefresh && !hasQuestionnaireDecision) {
       const cached = await this.repo.findValidByCnpj(cnpj);
       if (cached) {
         this.emitAudit(
@@ -143,6 +147,12 @@ export class MakScoreService {
 
       const normalized = normalizeEposi(raw, product);
       const decision = applyMakfilPolicy(normalized, this.cfg, input.context);
+      const questionnaire = input.context?.questionnaire
+        ? {
+            answers: input.context.questionnaire,
+            score: scoreQuestionnaire(input.context.questionnaire),
+          }
+        : undefined;
 
       const consultedAt = new Date();
       const validUntilMs =
@@ -171,6 +181,7 @@ export class MakScoreService {
           dataAbertura: normalized.dataAbertura,
         },
         context: input.context,
+        questionnaire,
       };
 
       const persisted: PersistedMakScore = {
@@ -235,6 +246,12 @@ export class MakScoreService {
           dataAbertura: null,
         },
         context: input.context,
+        questionnaire: input.context?.questionnaire
+          ? {
+              answers: input.context.questionnaire,
+              score: scoreQuestionnaire(input.context.questionnaire),
+            }
+          : undefined,
       };
     }
   }

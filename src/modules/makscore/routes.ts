@@ -6,6 +6,7 @@ import { onlyDigits } from "./cnpj";
 import type { MakScoreConfig } from "./config";
 import { MakScoreInputError, type MakScoreService } from "./service";
 import type { MakScoreResult, PersistedMakScore } from "./types";
+import { MAK_SCORE_QUESTIONNAIRE_VERSION } from "./questionnaire";
 import type { SecurityContext } from "../../security";
 import { buildAuditContext } from "../../security/audit";
 import type { InfraStores } from "../../infra";
@@ -16,6 +17,15 @@ const QuerySchema = z.object({
   proposalId: z.string().max(64).optional(),
   ticketPretendido: z.number().nonnegative().max(1_000_000_000).optional(),
   durationMonths: z.number().int().positive().max(600).optional(),
+  questionnaire: z
+    .object({
+      version: z.literal(MAK_SCORE_QUESTIONNAIRE_VERSION),
+      bloqueios: z.record(z.string(), z.boolean()),
+      pilares: z.record(z.string(), z.boolean()),
+      agravantes: z.record(z.string(), z.boolean()),
+      mitigadores: z.record(z.string(), z.boolean()),
+    })
+    .optional(),
   forceRefresh: z.boolean().optional(),
   // commercialContext NAO entra no Zod nesta fase (reservado, sem uso).
 });
@@ -148,6 +158,7 @@ export function buildMakScoreRouter(
           proposalId: parse.data.proposalId,
           ticketPretendido: parse.data.ticketPretendido,
           durationMonths: parse.data.durationMonths,
+          questionnaire: parse.data.questionnaire,
         },
       });
       res.json(projectForRole(result, security, req.user?.role));

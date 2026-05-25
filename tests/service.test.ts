@@ -6,6 +6,10 @@ import { InMemoryAuditSink } from "../src/modules/makscore/audit";
 import { MockEposiClient } from "../src/modules/makscore/eposiClient";
 import type { MakScoreConfig } from "../src/modules/makscore/config";
 import type { EposiClient, EposiRawResponse } from "../src/modules/makscore/eposiClient";
+import {
+  MAK_SCORE_QUESTIONNAIRE_VERSION,
+  type MakScoreQuestionnaireAnswers,
+} from "../src/modules/makscore/questionnaire";
 
 const cfg: MakScoreConfig = {
   eposiMode: "mock",
@@ -177,6 +181,28 @@ test("cache hit reutiliza score vigente", async () => {
   await svc.query({ cnpj: VALID_CNPJ });
   await svc.query({ cnpj: VALID_CNPJ });
   assert.equal(calls, 1);
+});
+
+test("questionario presente ignora cache por CNPJ para evitar decisao antiga", async () => {
+  let calls = 0;
+  const client: EposiClient = {
+    async query(): Promise<EposiRawResponse> {
+      calls++;
+      return new MockEposiClient().query("00000000000099", "TOTAL_PJ");
+    },
+  };
+  const questionnaire: MakScoreQuestionnaireAnswers = {
+    version: MAK_SCORE_QUESTIONNAIRE_VERSION,
+    bloqueios: {},
+    pilares: {},
+    agravantes: {},
+    mitigadores: {},
+  };
+  const repo = new InMemoryMakScoreRepository();
+  const svc = new MakScoreService(cfg, client, repo, silentSink());
+  await svc.query({ cnpj: VALID_CNPJ });
+  await svc.query({ cnpj: VALID_CNPJ, context: { questionnaire } });
+  assert.equal(calls, 2);
 });
 
 test("forceRefresh ignora cache", async () => {
