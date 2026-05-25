@@ -155,6 +155,52 @@ export const QUESTIONNAIRE_BLOCKERS: Omit<QuestionnaireItem, "pts">[] = [
   { key: "bl_restricao_grave", label: "Restricao grave ativa sem comprovacao operacional" },
 ];
 
+export const QUESTIONNAIRE_MAX_TOTAL = 250;
+
+export interface QuestionnaireTier {
+  min: number;
+  classification: "A" | "B" | "C" | "D" | "E";
+  label: string;
+  decision: string;
+}
+
+// Faixas de classificacao (ordem decrescente por `min`). Fonte unica:
+// usada por scoreQuestionnaire e exposta no schema para o frontend.
+export const QUESTIONNAIRE_TIERS: QuestionnaireTier[] = [
+  { min: 220, classification: "A", label: "Makfil A - Confiavel", decision: "Liberado - condicao padrao. Revisao em 6 meses." },
+  { min: 180, classification: "B", label: "Makfil B - Liberado com atencao", decision: "Liberado com atencao. Limite controlado, contrato reforcado. Revisao em 3 meses." },
+  { min: 140, classification: "C", label: "Makfil C - Medio risco", decision: "Liberar somente com mitigacao (entrada antecipada, caucao, garantia). Revisao em 30-60 dias." },
+  { min: 100, classification: "D", label: "Makfil D - Alto risco", decision: "Aprovar apenas com garantia real ou comprovacao forte de obra/contrato." },
+  { min: 0, classification: "E", label: "Makfil E - Reprovar", decision: "Reprovar cadastro ou bloquear locacao a prazo." },
+];
+
+export interface QuestionnaireSchema {
+  version: typeof MAK_SCORE_QUESTIONNAIRE_VERSION;
+  maxTotal: number;
+  pillars: Record<QuestionnaireSection, QuestionnairePillar>;
+  aggravators: QuestionnaireItem[];
+  mitigators: QuestionnaireItem[];
+  blockers: Omit<QuestionnaireItem, "pts">[];
+  tiers: QuestionnaireTier[];
+}
+
+/**
+ * Schema completo do questionario, para o frontend renderizar e prever o
+ * score sem duplicar definicoes. FONTE UNICA DE VERDADE - o backend
+ * recalcula o score autoritativo em scoreQuestionnaire.
+ */
+export function getQuestionnaireSchema(): QuestionnaireSchema {
+  return {
+    version: MAK_SCORE_QUESTIONNAIRE_VERSION,
+    maxTotal: QUESTIONNAIRE_MAX_TOTAL,
+    pillars: QUESTIONNAIRE_PILLARS,
+    aggravators: QUESTIONNAIRE_AGGRAVATORS,
+    mitigators: QUESTIONNAIRE_MITIGATORS,
+    blockers: QUESTIONNAIRE_BLOCKERS,
+    tiers: QUESTIONNAIRE_TIERS,
+  };
+}
+
 export function scoreQuestionnaire(
   answers: MakScoreQuestionnaireAnswers,
 ): MakScoreQuestionnaireScore {
@@ -198,62 +244,10 @@ export function scoreQuestionnaire(
     };
   }
 
-  if (total >= 220) {
-    return {
-      version: answers.version,
-      pillarTotals,
-      basePilares,
-      agravantesTotal,
-      mitigadoresTotal,
-      total,
-      hasBloqueio,
-      classification: "A",
-      label: "Makfil A - Confiavel",
-      decision: "Liberado - condicao padrao. Revisao em 6 meses.",
-    };
-  }
-  if (total >= 180) {
-    return {
-      version: answers.version,
-      pillarTotals,
-      basePilares,
-      agravantesTotal,
-      mitigadoresTotal,
-      total,
-      hasBloqueio,
-      classification: "B",
-      label: "Makfil B - Liberado com atencao",
-      decision: "Liberado com atencao. Limite controlado, contrato reforcado. Revisao em 3 meses.",
-    };
-  }
-  if (total >= 140) {
-    return {
-      version: answers.version,
-      pillarTotals,
-      basePilares,
-      agravantesTotal,
-      mitigadoresTotal,
-      total,
-      hasBloqueio,
-      classification: "C",
-      label: "Makfil C - Medio risco",
-      decision: "Liberar somente com mitigacao (entrada antecipada, caucao, garantia). Revisao em 30-60 dias.",
-    };
-  }
-  if (total >= 100) {
-    return {
-      version: answers.version,
-      pillarTotals,
-      basePilares,
-      agravantesTotal,
-      mitigadoresTotal,
-      total,
-      hasBloqueio,
-      classification: "D",
-      label: "Makfil D - Alto risco",
-      decision: "Aprovar apenas com garantia real ou comprovacao forte de obra/contrato.",
-    };
-  }
+  // Faixa por pontuacao (tiers em ordem decrescente; o ultimo tem min=0).
+  const tier =
+    QUESTIONNAIRE_TIERS.find((t) => total >= t.min) ??
+    QUESTIONNAIRE_TIERS[QUESTIONNAIRE_TIERS.length - 1];
 
   return {
     version: answers.version,
@@ -263,8 +257,8 @@ export function scoreQuestionnaire(
     mitigadoresTotal,
     total,
     hasBloqueio,
-    classification: "E",
-    label: "Makfil E - Reprovar",
-    decision: "Reprovar cadastro ou bloquear locacao a prazo.",
+    classification: tier.classification,
+    label: tier.label,
+    decision: tier.decision,
   };
 }

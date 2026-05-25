@@ -5,12 +5,13 @@ const state = {
   challengeToken: null,
   currentResult: null,
   currentView: "query",
+  // Schema do questionario (fonte unica vinda do backend).
+  questionnaire: null,
 };
 
 const $ = (id) => document.getElementById(id);
 const canReview = () => state.user && ["analista", "admin"].includes(state.user.role);
 const canSeeTech = canReview;
-const QUESTIONNAIRE_VERSION = "makscore-v1";
 
 // Escapa qualquer dado dinamico antes de injetar via innerHTML.
 // Defesa contra XSS (nomes de empresa da E-POSI, notas de analista, etc.).
@@ -19,65 +20,6 @@ function esc(v) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
-
-const Q_PILLARS = {
-  A: { title: "Regularidade cadastral e documental", max: 50, items: [
-    ["a_abertura_12m", "Data de abertura superior a 12 meses", 5], ["a_servico_cnae", "Servico compativel com CNAE", 4],
-    ["a_endereco_receita", "Endereco da Receita confere com comprovante e informado", 4], ["a_nome_confere", "Nome empresarial/fantasia confere com documentos", 3],
-    ["a_porte", "Porte coerente com volume da locacao", 3], ["a_ie_ativa", "IE ativa e regular no Cadesp/Sintegra", 5],
-    ["a_ie_endereco", "Endereco da IE confere com Receita", 4], ["a_ie_cnae", "CNAE da IE compativel", 4],
-    ["a_situacao_regular", "Situacao cadastral sem irregularidade", 5], ["a_contrato_jucesp", "Contrato social/ATA atualizado na Jucesp", 5],
-    ["a_jucesp_endereco", "Endereco da Jucesp igual ao informado", 4], ["a_qsa_jucesp", "Quadro societario da Jucesp confere", 5],
-    ["a_alteracao_recente", "Ultima alteracao contratual em prazo razoavel", 3], ["a_sem_duplicidade", "Sem duplicidade/confusao cadastral", 4],
-  ]},
-  B: { title: "Risco juridico e reputacional", max: 50, items: [
-    ["b_sem_processos", "Empresa sem processos judiciais relevantes", 5], ["b_socios_limpos", "Socios sem acoes civeis/trabalhistas recorrentes", 4],
-    ["b_sem_ambientais", "Sem acoes ambientais/fiscais relevantes", 4], ["b_sem_protesto", "Nenhum protesto ativo", 5],
-    ["b_protesto_justificado", "Protesto baixo, pontual e justificado", 3], ["b_sem_protestos_multi", "Sem protestos multiplos em diferentes pracas", 4],
-    ["b_sem_cheques_falencia", "Sem cheques sem fundos / falencia / recuperacao", 5], ["b_reclame_aqui", "Reclame Aqui e reputacao publica sem sinais criticos", 2],
-    ["b_referencia_segmento", "Referencia comercial positiva no segmento", 4], ["b_indicacao_makfil", "Indicacao de cliente Makfil bom pagador", 4],
-    ["b_confirma_terceiros", "Confirmacao com terceiros da obra/contrato", 4], ["b_nada_consta_extra", "Demais validacoes juridicas", 6],
-  ]},
-  C: { title: "Credito e comportamento financeiro", max: 70, items: [
-    ["c_acirp_spc", "Consulta ACIRP/SPC realizada", 5], ["c_score_minimo", "Score de credito acima do minimo Makfil", 5],
-    ["c_sem_excesso_consulta", "Sem consultas excessivas recentes no CNPJ", 4], ["c_historico_estavel", "Historico financeiro estavel", 4],
-    ["c_socio_sem_negativa", "Nenhum socio negativado", 5], ["c_pagamentos_em_dia", "Historico de pagamentos em dia com mercado", 5],
-    ["c_makfil_sem_atraso", "Historico Makfil sem atrasos", 8], ["c_tempo_makfil", "Tempo de cadastro Makfil", 4],
-    ["c_volume_coerente", "Volume pretendido coerente com porte", 6], ["c_limite_externo", "Limite externo compativel com operacao", 6],
-    ["c_endividamento", "Endividamento e compromissos controlados", 6], ["c_capacidade", "Capacidade de pagamento compativel com ticket", 6],
-    ["c_contrato_obra", "Contrato/prestacao comprovando receita da obra", 6],
-  ]},
-  D: { title: "Evidencia operacional e fisica", max: 45, items: [
-    ["d_endereco_maps", "Endereco fisico confirmado no Maps/Street View", 5], ["d_fachada", "Fachada com placa, logotipo ou operacao aparente", 4],
-    ["d_nao_residencial", "Local nao residencial/coworking generico", 4], ["d_obra_real", "Endereco da obra real e ativo", 5],
-    ["d_obra_segmento", "Obra compativel com segmento", 4], ["d_vendedor_conhece", "Vendedor conhece a instalacao", 5],
-    ["d_captacao_obra", "Cliente captado em obra e validado", 5], ["d_contato_usina", "Contato da usina/obra confirmado", 5],
-    ["d_nf_entrada", "NF de entrada de material ou evidencia equivalente", 4], ["d_ligacoes_locais", "Ligacoes locais confirmando obra", 4],
-  ]},
-  E: { title: "Presenca digital, identidade e consistencia", max: 35, items: [
-    ["e_dominio_proprio", "Dominio proprio registrado", 3], ["e_dominio_antigo", "Dominio com mais de 1 ano", 2],
-    ["e_dominio_titular", "Titular do dominio = CNPJ ou socio", 3], ["e_email_corporativo", "E-mail corporativo do mesmo dominio", 3],
-    ["e_telefone_validado", "Telefone validado / titular coerente", 3], ["e_email_validado", "E-mail validado e coerente", 2],
-    ["e_assertiva_qsa", "Assertiva confirma quadro societario/dados", 4], ["e_sem_inconsistencias", "Sem inconsistencias entre Assertiva, Receita e Jucesp", 5],
-    ["e_presenca_digital", "Presenca digital minima (site, Google Business, redes)", 2], ["e_linkedin", "LinkedIn e rastros publicos coerentes", 3],
-    ["e_endereco_socios", "Comprovante de endereco dos socios coerente", 5],
-  ]},
-};
-const Q_AGGRAVATORS = [
-  ["ag_protesto_alto", "Protesto ativo acima de R$ 10 mil", -20], ["ag_pendencia_locadora", "Pendencia recente em locadora/frota", -15],
-  ["ag_divergencia", "Divergencia societaria/documental", -25], ["ag_email_generico", "Gmail/Hotmail sem site, sem referencia e sem presenca fisica", -10],
-  ["ag_obra_distante", "Obra distante sem contato do contratante/usina", -15], ["ag_ticket_alto", "Primeiro negocio com ticket alto para empresa pequena", -20],
-];
-const Q_MITIGATORS = [
-  ["mt_indicacao_ouro", "Cliente indicado por Ouro/Prata adimplente", 10], ["mt_historico_makfil", "Ja possui historico positivo com a Makfil", 15],
-  ["mt_vendedor_conhece", "Vendedor conhece instalacao e obra", 8], ["mt_contrato_os_nf", "Contrato/OS/NF comprovando a operacao", 10],
-];
-const Q_BLOCKERS = [
-  ["bl_cnpj_inapto", "CNPJ inapto, baixado, suspenso ou irregular"], ["bl_menos_12m", "Empresa com menos de 12 meses de abertura"],
-  ["bl_socio_irregular", "Socio com CPF irregular"], ["bl_incompatibilidade", "Incompatibilidade grave entre razao social, QSA, endereco e documentos"],
-  ["bl_recusa_docs", "Recusa em enviar documentos minimos / sem responsavel legal"], ["bl_endereco_inexistente", "Endereco inexistente ou empresa de fachada"],
-  ["bl_protesto_grave", "Protestos relevantes sem justificativa plausivel"], ["bl_restricao_grave", "Restricao grave ativa sem comprovacao operacional"],
-];
 
 function show(el, visible) { el.classList.toggle("hide", !visible); }
 function msg(el, text, kind = "error") {
@@ -103,59 +45,83 @@ function maskCnpjInput(v) {
     .replace(/\.(\d{3})(\d)/, ".$1/$2")
     .replace(/(\d{4})(\d)/, "$1-$2");
 }
-function qCheckHtml(group, item) {
-  const [key, label, pts] = item;
+function qCheckHtml(group, key, label, pts) {
   const ptsLabel = typeof pts === "number" ? (pts > 0 ? `+${pts}` : String(pts)) : "bloqueio";
   return `<label class="check"><input type="checkbox" data-q-group="${esc(group)}" data-q-key="${esc(key)}" /> <span>${esc(label)}</span><span class="pts">${esc(ptsLabel)}</span></label>`;
 }
 function renderQuestionnaire() {
   const box = $("questionnaireBox");
+  const schema = state.questionnaire;
+  if (!schema) {
+    box.innerHTML = "<div class='muted small'>Carregando questionário…</div>";
+    return;
+  }
   box.innerHTML = `
     <details class="question-group" open>
       <summary>Bloqueios automáticos <span class="pts">reprova</span></summary>
-      <div class="checks">${Q_BLOCKERS.map((i) => qCheckHtml("bloqueios", i)).join("")}</div>
+      <div class="checks">${schema.blockers.map((b) => qCheckHtml("bloqueios", b.key, b.label)).join("")}</div>
     </details>
-    ${Object.entries(Q_PILLARS).map(([id, p]) => `
+    ${Object.entries(schema.pillars).map(([id, p]) => `
       <details class="question-group">
         <summary>${esc(id)}. ${esc(p.title)} <span class="pts">max ${esc(p.max)}</span></summary>
-        <div class="checks">${p.items.map((i) => qCheckHtml("pilares", i)).join("")}</div>
+        <div class="checks">${p.items.map((i) => qCheckHtml("pilares", i.key, i.label, i.pts)).join("")}</div>
       </details>
     `).join("")}
     <details class="question-group">
       <summary>Agravantes <span class="pts">reduzem</span></summary>
-      <div class="checks">${Q_AGGRAVATORS.map((i) => qCheckHtml("agravantes", i)).join("")}</div>
+      <div class="checks">${schema.aggravators.map((i) => qCheckHtml("agravantes", i.key, i.label, i.pts)).join("")}</div>
     </details>
     <details class="question-group">
       <summary>Mitigadores <span class="pts">bonus</span></summary>
-      <div class="checks">${Q_MITIGATORS.map((i) => qCheckHtml("mitigadores", i)).join("")}</div>
+      <div class="checks">${schema.mitigators.map((i) => qCheckHtml("mitigadores", i.key, i.label, i.pts)).join("")}</div>
     </details>
   `;
   box.querySelectorAll("input[type=checkbox]").forEach((i) => i.addEventListener("change", updateQuestionnaireScore));
   updateQuestionnaireScore();
 }
 function collectQuestionnaire() {
-  const answers = { version: QUESTIONNAIRE_VERSION, bloqueios: {}, pilares: {}, agravantes: {}, mitigadores: {} };
+  const answers = {
+    version: state.questionnaire?.version || "makscore-v1",
+    bloqueios: {}, pilares: {}, agravantes: {}, mitigadores: {},
+  };
   document.querySelectorAll("[data-q-group]").forEach((input) => {
     answers[input.dataset.qGroup][input.dataset.qKey] = input.checked;
   });
   return answers;
 }
+// Preview local (o backend recalcula o score autoritativo). Usa o mesmo
+// schema do servidor -> sem duplicacao/drift.
 function scoreQuestionnaireLocal(answers) {
+  const schema = state.questionnaire;
+  if (!schema) return { total: 0, label: "-", classification: "-", hasBlock: false };
   let total = 0;
-  for (const p of Object.values(Q_PILLARS)) {
-    for (const [key, , pts] of p.items) if (answers.pilares[key]) total += pts;
+  for (const p of Object.values(schema.pillars)) {
+    for (const it of p.items) if (answers.pilares[it.key]) total += it.pts;
   }
-  for (const [key, , pts] of Q_AGGRAVATORS) if (answers.agravantes[key]) total += pts;
-  for (const [key, , pts] of Q_MITIGATORS) if (answers.mitigadores[key]) total += pts;
-  total = Math.min(250, Math.max(0, total));
-  const hasBlock = Q_BLOCKERS.some(([key]) => answers.bloqueios[key]);
-  const label = hasBlock ? "Bloqueio" : total >= 220 ? "Makfil A" : total >= 180 ? "Makfil B" : total >= 140 ? "Makfil C" : total >= 100 ? "Makfil D" : "Makfil E";
-  return { total, label, hasBlock };
+  for (const it of schema.aggravators) if (answers.agravantes[it.key]) total += it.pts;
+  for (const it of schema.mitigators) if (answers.mitigadores[it.key]) total += it.pts;
+  total = Math.min(schema.maxTotal, Math.max(0, total));
+  const hasBlock = schema.blockers.some((b) => answers.bloqueios[b.key]);
+  const tier = hasBlock
+    ? { classification: "bloqueio", label: "Bloqueio" }
+    : (schema.tiers.find((t) => total >= t.min) || schema.tiers[schema.tiers.length - 1]);
+  return { total, label: tier.label, classification: tier.classification, hasBlock };
 }
 function updateQuestionnaireScore() {
+  const max = state.questionnaire?.maxTotal ?? 250;
   const s = scoreQuestionnaireLocal(collectQuestionnaire());
-  $("questionnaireScore").textContent = `${s.label} · ${s.total} / 250`;
-  $("questionnaireScore").className = "pill " + (s.hasBlock || s.label === "Makfil E" ? "reprovado" : s.label === "Makfil C" || s.label === "Makfil D" ? "exige_analise" : "aprovado");
+  $("questionnaireScore").textContent = `${s.label} · ${s.total} / ${max}`;
+  const cls = s.hasBlock || s.classification === "E"
+    ? "reprovado"
+    : (s.classification === "C" || s.classification === "D") ? "exige_analise" : "aprovado";
+  $("questionnaireScore").className = "pill " + cls;
+}
+async function loadQuestionnaireSchema() {
+  if (!state.questionnaire) {
+    try { state.questionnaire = await api("/api/makscore/questionnaire"); }
+    catch { state.questionnaire = null; }
+  }
+  renderQuestionnaire();
 }
 
 async function api(path, options = {}) {
@@ -214,6 +180,8 @@ function showAuthenticated(ok) {
   $("sessionUser").textContent = state.user?.id || "-";
   $("sessionRole").textContent = state.user?.role || "-";
   showView(state.currentView || "query");
+  // Schema do questionario (fonte unica) carregado apos autenticar.
+  loadQuestionnaireSchema();
 }
 
 function showLogin() {
@@ -550,5 +518,4 @@ $("cnpj").addEventListener("input", (e) => { e.target.value = maskCnpjInput(e.ta
 $("ticket").addEventListener("blur", (e) => { e.target.value = fmtMoneyInput(e.target.value); });
 document.querySelectorAll(".nav button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 
-renderQuestionnaire();
 bootstrap();

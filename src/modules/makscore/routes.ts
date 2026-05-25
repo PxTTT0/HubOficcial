@@ -6,7 +6,7 @@ import { onlyDigits } from "./cnpj";
 import type { MakScoreConfig } from "./config";
 import { MakScoreInputError, type MakScoreService } from "./service";
 import type { MakScoreResult, PersistedMakScore } from "./types";
-import { MAK_SCORE_QUESTIONNAIRE_VERSION } from "./questionnaire";
+import { MAK_SCORE_QUESTIONNAIRE_VERSION, getQuestionnaireSchema } from "./questionnaire";
 import type { SecurityContext } from "../../security";
 import { buildAuditContext } from "../../security/audit";
 import type { InfraStores } from "../../infra";
@@ -347,6 +347,12 @@ export function buildMakScoreRouter(
       }
     },
   );
+
+  // Schema do questionario (fonte unica). Qualquer perfil autenticado
+  // pode obter para renderizar o formulario e prever o score.
+  router.get("/questionnaire", (_req, res) => {
+    res.json(getQuestionnaireSchema());
+  });
 
   router.get("/health", (_req, res) => {
     res.json({
