@@ -7,6 +7,7 @@ import type { MakScoreConfig } from "./config";
 import { MakScoreInputError, type MakScoreService } from "./service";
 import type { MakScoreResult, PersistedMakScore } from "./types";
 import { MAK_SCORE_QUESTIONNAIRE_VERSION, getQuestionnaireSchema } from "./questionnaire";
+import { computeEffectiveDecision } from "./decision/effective";
 import type { SecurityContext } from "../../security";
 import { buildAuditContext } from "../../security/audit";
 import type { InfraStores } from "../../infra";
@@ -73,16 +74,21 @@ function projectPersisted(
 ) {
   const { cnpjHash, createdAtMs, expiresAtMs, reviewStatus, reviewerId, reviewNote, reviewedAt, ...result } = p;
   const base = projectForRole(result, security, role);
+  // Decisao efetiva (automatica + review) para todos os perfis.
+  const withEffective = {
+    ...base,
+    effectiveDecision: computeEffectiveDecision(result.outcome, reviewStatus),
+  };
   if (canSeeTechnicalDetails(security, role as any)) {
     return {
-      ...base,
+      ...withEffective,
       reviewStatus,
       reviewerId: reviewerId ?? null,
       reviewNote: reviewNote ?? null,
       reviewedAt: reviewedAt ?? null,
     };
   }
-  return base;
+  return withEffective;
 }
 
 export function buildMakScoreRouter(
@@ -161,7 +167,11 @@ export function buildMakScoreRouter(
           questionnaire: parse.data.questionnaire,
         },
       });
-      res.json(projectForRole(result, security, req.user?.role));
+      res.json({
+        ...projectForRole(result, security, req.user?.role),
+        // consulta fresca ainda nao tem review -> efetiva = automatica
+        effectiveDecision: computeEffectiveDecision(result.outcome, "none"),
+      });
     } catch (err) {
       if (err instanceof MakScoreInputError) {
         res.status(422).json({ error: err.code, message: err.message });
