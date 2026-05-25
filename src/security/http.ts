@@ -20,7 +20,9 @@ export function applySecurityHeaders(cfg: SecurityConfig) {
     setIfMissing(
       res,
       "Content-Security-Policy",
-      "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+      // Sem 'unsafe-inline': JS e CSS sao servidos como arquivos externos
+      // (/makscore/app.js, /makscore/app.css) e o HTML nao tem style="".
+      "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
     );
     if (cfg.secureCookies) {
       setIfMissing(res, "Strict-Transport-Security", "max-age=31536000; includeSubDomains");
