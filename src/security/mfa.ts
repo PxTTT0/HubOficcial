@@ -72,13 +72,13 @@ export class MfaService {
     return this.cfg.mfaRequiredRoles.includes(role as any);
   }
 
-  beginEnrollment(userId: string, username: string): MfaEnrollmentStart {
-    const user = this.users.findById(userId);
+  async beginEnrollment(userId: string, username: string): Promise<MfaEnrollmentStart> {
+    const user = await this.users.findById(userId);
     if (!user) throw new Error("user_not_found");
     if (user.mfa.enabled) throw new Error("mfa_already_enabled");
 
     const secret = generateTotpSecret();
-    this.users.updateMfa(userId, {
+    await this.users.updateMfa(userId, {
       enabled: false,
       secret,
       lastUsedStep: -1,
@@ -93,8 +93,8 @@ export class MfaService {
     return { secret, otpauthUri };
   }
 
-  confirmEnrollment(userId: string, code: string): MfaEnrollmentConfirmation {
-    const user = this.users.findById(userId);
+  async confirmEnrollment(userId: string, code: string): Promise<MfaEnrollmentConfirmation> {
+    const user = await this.users.findById(userId);
     if (!user) throw new Error("user_not_found");
     if (user.mfa.enabled) throw new Error("mfa_already_enabled");
     if (!user.mfa.secret) throw new Error("mfa_not_started");
@@ -119,7 +119,7 @@ export class MfaService {
     // enrollment. O secret acabou de nascer; um atacante que capture
     // este codigo provavelmente capturou o secret junto, entao replay
     // protection desse step nao agrega.
-    this.users.updateMfa(userId, {
+    await this.users.updateMfa(userId, {
       enabled: true,
       enrolledAtMs: Date.now(),
       recoveryHashes: hashes,
@@ -128,10 +128,10 @@ export class MfaService {
     return { recoveryCodes: codes };
   }
 
-  disable(userId: string): void {
-    const user = this.users.findById(userId);
+  async disable(userId: string): Promise<void> {
+    const user = await this.users.findById(userId);
     if (!user) throw new Error("user_not_found");
-    this.users.updateMfa(userId, {
+    await this.users.updateMfa(userId, {
       enabled: false,
       secret: null,
       lastUsedStep: -1,
@@ -194,8 +194,8 @@ export class MfaService {
     return { userId: record.userId };
   }
 
-  verifyTotp(userId: string, code: string): boolean {
-    const user = this.users.findById(userId);
+  async verifyTotp(userId: string, code: string): Promise<boolean> {
+    const user = await this.users.findById(userId);
     if (!user || !user.mfa.enabled || !user.mfa.secret) return false;
     const result = verifyTotpCode({
       secret: user.mfa.secret,
@@ -203,17 +203,17 @@ export class MfaService {
       lastUsedStep: user.mfa.lastUsedStep,
     });
     if (!result.ok) return false;
-    this.users.updateMfa(userId, {
-      lastUsedStep: result.step ?? user.mfa.lastUsedStep,
-    });
-    return true;
+    if (result.step == null) return true;
+    // CAS atomico: rejeita replay do mesmo step entre replicas.
+    // Se outro processo ja consumiu este step, bump retorna false.
+    return this.users.bumpLastUsedStep(userId, result.step);
   }
 
-  verifyRecoveryCode(userId: string, code: string): boolean {
-    const user = this.users.findById(userId);
+  async verifyRecoveryCode(userId: string, code: string): Promise<boolean> {
+    const user = await this.users.findById(userId);
     if (!user || !user.mfa.enabled) return false;
     const expected = hashRecoveryCode(this.cfg, code);
-    return Boolean(this.users.consumeRecoveryHash(userId, expected));
+    return Boolean(await this.users.consumeRecoveryHash(userId, expected));
   }
 
 }

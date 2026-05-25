@@ -19,11 +19,7 @@ import { getClientIp } from "./http";
 import { MfaService } from "./mfa";
 import { loadPasswordHashingConfig, verifyPassword, type PasswordHashingConfig } from "./password";
 import { validatePasswordPolicy } from "./passwordPolicy";
-import {
-  InMemoryUserRepository,
-  type StoredUser,
-  type UserRepository,
-} from "./users";
+import type { StoredUser, UserRepository } from "./users";
 import { createInfraStores, type InfraStores } from "../infra";
 import type { RateLimiter } from "../infra/rateLimitStore";
 import type { SessionRecord } from "../infra/sessionStore";
@@ -96,11 +92,14 @@ function sanitizeUser(user: StoredUser): AuthenticatedUser {
 
 export function createSecurityContext(
   cfg: SecurityConfig = loadSecurityConfig(),
-  users: UserRepository = new InMemoryUserRepository(),
+  usersOverride?: UserRepository,
   passwordCfg: PasswordHashingConfig = loadPasswordHashingConfig(),
   audit: SecurityAuditSink = new JsonlSecurityAuditSink(loadSecurityAuditConfig()),
   infra: InfraStores = createInfraStores(),
 ): SecurityContext {
+  // Fonte de verdade de usuarios: infra (DB em prod, memoria em dev/test).
+  // `usersOverride` permite injecao direta (testes/uso programatico).
+  const users: UserRepository = usersOverride ?? infra.userRepository;
   const sessionStore = infra.sessionStore;
   const mfa = new MfaService(cfg, users, infra.mfaChallengeStore);
 
@@ -400,7 +399,7 @@ export function createSecurityContext(
       return;
     }
 
-    const user = users.findByUsername(username);
+    const user = await users.findByUsername(username);
     if (!user || user.disabled) {
       await loginFailureLimiter.check(failureKey);
       recordEvent({
@@ -519,8 +518,8 @@ export function createSecurityContext(
     }
 
     const ok = useRecovery
-      ? mfa.verifyRecoveryCode(resolved.userId, code)
-      : mfa.verifyTotp(resolved.userId, code);
+      ? await mfa.verifyRecoveryCode(resolved.userId, code)
+      : await mfa.verifyTotp(resolved.userId, code);
     if (!ok) {
       await mfaFailureLimiter.check(failureKey);
       recordEvent({
@@ -541,7 +540,7 @@ export function createSecurityContext(
       return;
     }
 
-    const user = users.findById(consumed.userId);
+    const user = await users.findById(consumed.userId);
     if (!user || user.disabled) {
       res.status(401).json({ error: "invalid_credentials" });
       return;
@@ -592,7 +591,7 @@ export function createSecurityContext(
   });
 
   authRouter.get("/me", requireAuthAllowingEnrollment, async (req, res) => {
-    const user = req.user ? users.findById(req.user.id) : null;
+    const user = req.user ? await users.findById(req.user.id) : null;
     if (!user) {
       res.status(404).json({ error: "user_not_found" });
       return;
@@ -609,15 +608,15 @@ export function createSecurityContext(
     });
   });
 
-  authRouter.post("/mfa/enroll", requireAuthAllowingEnrollment, (req, res) => {
+  authRouter.post("/mfa/enroll", requireAuthAllowingEnrollment, async (req, res) => {
     const userId = req.user?.id;
-    const user = userId ? users.findById(userId) : null;
+    const user = userId ? await users.findById(userId) : null;
     if (!user) {
       res.status(404).json({ error: "user_not_found" });
       return;
     }
     try {
-      const result = mfa.beginEnrollment(user.id, user.username);
+      const result = await mfa.beginEnrollment(user.id, user.username);
       recordEvent({
         scope: "auth.mfa",
         type: "mfa.enroll.started",
@@ -635,7 +634,7 @@ export function createSecurityContext(
 
   authRouter.post("/mfa/verify-enrollment", requireAuthAllowingEnrollment, async (req, res) => {
     const userId = req.user?.id;
-    const user = userId ? users.findById(userId) : null;
+    const user = userId ? await users.findById(userId) : null;
     if (!user) {
       res.status(404).json({ error: "user_not_found" });
       return;
@@ -646,7 +645,7 @@ export function createSecurityContext(
       return;
     }
     try {
-      const result = mfa.confirmEnrollment(user.id, code);
+      const result = await mfa.confirmEnrollment(user.id, code);
       // Rotaciona o sid: invalida a sessao "enrollmentPending" e emite uma nova
       // sessao plena, evitando que o token original (visto durante o estado
       // pre-MFA) continue valido apos a elevacao de privilegio.
@@ -687,7 +686,7 @@ export function createSecurityContext(
 
   authRouter.post("/mfa/disable", requireAuth, async (req, res) => {
     const userId = req.user?.id;
-    const user = userId ? users.findById(userId) : null;
+    const user = userId ? await users.findById(userId) : null;
     if (!user) {
       res.status(404).json({ error: "user_not_found" });
       return;
@@ -711,7 +710,7 @@ export function createSecurityContext(
       res.status(401).json({ error: "invalid_credentials" });
       return;
     }
-    if (!user.mfa.enabled || !mfa.verifyTotp(user.id, code)) {
+    if (!user.mfa.enabled || !(await mfa.verifyTotp(user.id, code))) {
       recordEvent({
         scope: "auth.mfa",
         type: "mfa.disable.failure",
@@ -723,7 +722,7 @@ export function createSecurityContext(
       res.status(401).json({ error: "invalid_code" });
       return;
     }
-    mfa.disable(user.id);
+    await mfa.disable(user.id);
     recordEvent({
       scope: "auth.mfa",
       type: "mfa.disabled",

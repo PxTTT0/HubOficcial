@@ -51,6 +51,11 @@ function buildEnv(
       ...makscore,
     },
     redis: { url: "redis://localhost:6379", allowInMemoryState: false },
+    db: {
+      url: "postgres://localhost/hub",
+      allowInMemoryState: false,
+      encryptionKeyOk: true,
+    },
   };
 }
 

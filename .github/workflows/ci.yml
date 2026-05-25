@@ -58,3 +58,55 @@ jobs:
 
       - name: npm audit (high+)
         run: npm audit --audit-level=high
+
+  db-validation:
+    name: DB validation (Postgres real)
+    runs-on: ubuntu-latest
+
+    # Postgres real (nao pg-mem): valida migrations, schema, cifragem do
+    # secret MFA, CAS de last_used_step e DELETE RETURNING de recovery.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hub
+          POSTGRES_PASSWORD: hub
+          POSTGRES_DB: hub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hub -d hub"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://hub:hub@localhost:5432/hub
+      DB_SSL: "false"
+      # chave fake base64 de 32 bytes - apenas para o CI
+      AUTH_MFA_SECRET_ENCRYPTION_KEY: XZFM4MJ4ei1nwN9LEnByL2A37qTPD2N+KymPcO4eWK4=
+      AUTH_BOOTSTRAP_ADMIN_ID: ci-admin
+      AUTH_BOOTSTRAP_ADMIN_USERNAME: admin
+      AUTH_BOOTSTRAP_ADMIN_PASSWORD_HASH: ci-fake-hash-nao-e-argon2-real
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (tsc)
+        run: npm run build
+
+      - name: Migrate + seed (Postgres real)
+        run: node dist/src/scripts/migrate.js
+
+      - name: Validate schema + atomic ops (Postgres real)
+        run: node dist/src/scripts/validate-db.js

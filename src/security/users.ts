@@ -28,10 +28,17 @@ export interface UserMfaUpdate {
 }
 
 export interface UserRepository {
-  findByUsername(username: string): StoredUser | null;
-  findById(id: string): StoredUser | null;
-  updateMfa(id: string, update: UserMfaUpdate): StoredUser | null;
-  consumeRecoveryHash(id: string, hash: string): StoredUser | null;
+  findByUsername(username: string): Promise<StoredUser | null>;
+  findById(id: string): Promise<StoredUser | null>;
+  updateMfa(id: string, update: UserMfaUpdate): Promise<StoredUser | null>;
+  /** Consumo single-use atomico do recovery hash. */
+  consumeRecoveryHash(id: string, hash: string): Promise<StoredUser | null>;
+  /**
+   * Avanca lastUsedStep de forma ATOMICA (compare-and-set): so aplica se
+   * newStep > atual. Retorna true se aplicou (codigo valido e nao-replay),
+   * false caso contrario. Protege contra replay TOTP entre replicas.
+   */
+  bumpLastUsedStep(id: string, newStep: number): Promise<boolean>;
 }
 
 export function emptyMfaState(): MfaState {
@@ -77,7 +84,7 @@ function parseUsersJson(raw: string | undefined): StoredUser[] {
   }
 }
 
-function loadBootstrapUsers(): StoredUser[] {
+export function loadBootstrapUsers(): StoredUser[] {
   const configured = parseUsersJson(process.env.AUTH_USERS_JSON);
   const adminUsername = process.env.AUTH_BOOTSTRAP_ADMIN_USERNAME;
   const adminPasswordHash = process.env.AUTH_BOOTSTRAP_ADMIN_PASSWORD_HASH;
@@ -110,15 +117,15 @@ export class InMemoryUserRepository implements UserRepository {
     }
   }
 
-  findByUsername(username: string): StoredUser | null {
+  async findByUsername(username: string): Promise<StoredUser | null> {
     return this.byUsername.get(normalizeUsername(username)) ?? null;
   }
 
-  findById(id: string): StoredUser | null {
+  async findById(id: string): Promise<StoredUser | null> {
     return this.byId.get(id) ?? null;
   }
 
-  updateMfa(id: string, update: UserMfaUpdate): StoredUser | null {
+  async updateMfa(id: string, update: UserMfaUpdate): Promise<StoredUser | null> {
     const user = this.byId.get(id);
     if (!user) return null;
     const next: MfaState = {
@@ -133,12 +140,23 @@ export class InMemoryUserRepository implements UserRepository {
     return user;
   }
 
-  consumeRecoveryHash(id: string, hash: string): StoredUser | null {
+  async consumeRecoveryHash(id: string, hash: string): Promise<StoredUser | null> {
     const user = this.byId.get(id);
     if (!user) return null;
     const before = user.mfa.recoveryHashes.length;
     user.mfa.recoveryHashes = user.mfa.recoveryHashes.filter((h) => h !== hash);
     if (user.mfa.recoveryHashes.length === before) return null;
     return user;
+  }
+
+  async bumpLastUsedStep(id: string, newStep: number): Promise<boolean> {
+    const user = this.byId.get(id);
+    if (!user) return false;
+    // CAS: single-process => trivialmente atomico.
+    if (newStep > user.mfa.lastUsedStep) {
+      user.mfa.lastUsedStep = newStep;
+      return true;
+    }
+    return false;
   }
 }

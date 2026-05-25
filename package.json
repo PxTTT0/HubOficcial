@@ -6,6 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "auth:hash": "ts-node src/scripts/hash-password.ts",
+    "db:migrate": "node --env-file=.env dist/src/scripts/migrate.js",
+    "db:validate": "node --env-file=.env.validation dist/src/scripts/validate-db.js",
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file=.env dist/src/server.js",
     "dev": "node --env-file=.env -r ts-node/register src/server.ts",
@@ -16,11 +18,14 @@
     "argon2": "^0.44.0",
     "express": "^4.19.2",
     "ioredis": "5.10.1",
+    "pg": "8.16.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.0",
+    "@types/pg": "8.15.5",
+    "pg-mem": "3.0.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
   }

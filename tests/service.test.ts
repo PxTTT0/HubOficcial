@@ -29,8 +29,8 @@ const VALID_CNPJ = "11222333000181";
 
 function silentSink() {
   const sink = new InMemoryAuditSink();
-  // suprime ruido do console.log nos testes
-  (sink as any).write = function (e: any) {
+  // suprime ruido do console.log nos testes (write e async no contrato)
+  (sink as any).write = async function (e: any) {
     (this as any).events.push({ ...e });
   };
   return sink;
@@ -152,7 +152,7 @@ test("auditoria registra correlation_id e CNPJ mascarado", async () => {
   const sink = silentSink();
   const svc = new MakScoreService(cfg, new MockEposiClient(), new InMemoryMakScoreRepository(), sink);
   const r = await svc.query({ cnpj: VALID_CNPJ, context: { userId: "u1" } });
-  const events = sink.recent(50);
+  const events = await sink.recent(50);
   assert.ok(events.length > 0);
   for (const e of events) {
     assert.equal(e.correlationId, r.correlationId);

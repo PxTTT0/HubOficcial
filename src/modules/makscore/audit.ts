@@ -24,15 +24,17 @@ export interface AuditEvent {
   message?: string;
 }
 
+// DB e assincrono => o contrato reflete isso. O servico chama
+// best-effort (void sink.write(e).catch(...)) p/ nao bloquear a resposta.
 export interface AuditSink {
-  write(event: AuditEvent): void;
-  recent(limit?: number): AuditEvent[];
+  write(event: AuditEvent): Promise<void>;
+  recent(limit?: number): Promise<AuditEvent[]>;
 }
 
 export class InMemoryAuditSink implements AuditSink {
   private events: AuditEvent[] = [];
 
-  write(event: AuditEvent): void {
+  async write(event: AuditEvent): Promise<void> {
     this.events.push({ ...event });
     if (this.events.length > 1000) this.events.shift();
     // Log estruturado, sempre com CNPJ mascarado.
@@ -47,7 +49,7 @@ export class InMemoryAuditSink implements AuditSink {
     );
   }
 
-  recent(limit = 50): AuditEvent[] {
+  async recent(limit = 50): Promise<AuditEvent[]> {
     return this.events.slice(-limit).reverse();
   }
 }
