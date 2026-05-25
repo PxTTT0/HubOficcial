@@ -60,6 +60,13 @@ export * from "./mfaChallengeStore";
 export * from "./eposiTokenStore";
 export * from "./db/pool";
 
+export type DependencyStatus = "ok" | "down" | "disabled";
+
+export interface ReadinessReport {
+  ready: boolean;
+  checks: { redis: DependencyStatus; db: DependencyStatus };
+}
+
 export interface InfraStores {
   mode: BackingMode;
   redisConfig: RedisConfig;
@@ -83,6 +90,19 @@ export interface InfraStores {
   userRepository: UserRepository;
   makscoreAuditSink: AuditSink;
   makscoreRepository: MakScoreRepository;
+  /**
+   * Readiness: faz ping nas dependencias (Redis PING + Postgres SELECT 1)
+   * com timeout. "disabled" = dependencia em modo memoria (dev). "down"
+   * derruba o ready. Nao vaza detalhes de conexao.
+   */
+  checkReadiness: (timeoutMs?: number) => Promise<ReadinessReport>;
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+  ]);
 }
 
 /**
@@ -155,5 +175,18 @@ export function createInfraStores(
     userRepository,
     makscoreAuditSink,
     makscoreRepository,
+    checkReadiness: async (timeoutMs = 2000): Promise<ReadinessReport> => {
+      let redis: DependencyStatus = "disabled";
+      if (client) {
+        try { await withTimeout(client.ping(), timeoutMs); redis = "ok"; }
+        catch { redis = "down"; }
+      }
+      let db: DependencyStatus = "disabled";
+      if (sqlExecutor) {
+        try { await withTimeout(sqlExecutor.query("SELECT 1"), timeoutMs); db = "ok"; }
+        catch { db = "down"; }
+      }
+      return { ready: redis !== "down" && db !== "down", checks: { redis, db } };
+    },
   };
 }

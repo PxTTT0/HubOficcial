@@ -59,6 +59,16 @@ rodam **sem Redis real** (fake `RedisLike` in-process): cobrem store,
 restart (novo store / mesmo backend), múltiplas instâncias (backend
 compartilhado), consume atômico e as políticas fail-open/closed.
 
+## Health endpoints
+
+| Endpoint | Tipo | Comportamento | Uso |
+|---|---|---|---|
+| `GET /healthz` | liveness | 200 fixo se o processo está de pé (não checa deps) | restart do container |
+| `GET /readyz` | readiness | ping Redis (`PING`) + Postgres (`SELECT 1`) com timeout; 200 se ok, **503** se alguma dep cair; em modo memória reporta `disabled` e 200 | load balancer / orquestrador (rotear tráfego) |
+
+`/readyz` retorna `{ ok, checks: { redis, db } }` com status `ok|down|disabled`
+— sem vazar string de conexão. Ambos são públicos (sem auth).
+
 ## Limitações conhecidas
 
 - Token E-POSI compartilhado reduz reautenticações, mas não há lock
