@@ -9,6 +9,8 @@ const state = {
   questionnaire: null,
   // Secao ativa do stepper do questionario.
   qStep: null,
+  // Paginacao/filtros do historico.
+  history: { offset: 0, limit: 20, total: 0, filters: {} },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -273,6 +275,8 @@ function showAuthenticated(ok) {
   if (!ok) return;
   $("sessionUser").textContent = state.user?.id || "-";
   $("sessionRole").textContent = state.user?.role || "-";
+  // Filtro por usuario so faz sentido p/ analista/admin (veem geral).
+  show($("filterUserIdField"), canReview());
   showView(state.currentView || "query");
   // Schema do questionario (fonte unica) carregado apos autenticar.
   loadQuestionnaireSchema();
@@ -442,16 +446,42 @@ async function queryMakScore(e) {
   });
 }
 
-async function loadHistory() {
+// Le os filtros do formulario. Datas (yyyy-mm-dd) viram ISO; "to" cobre
+// o dia inteiro (fim do dia) para o filtro <= toMs.
+function collectHistoryFilters() {
+  const f = {};
+  const outcome = $("filterOutcome").value;
+  const from = $("filterFrom").value;
+  const to = $("filterTo").value;
+  const q = $("filterQ").value.trim();
+  const userId = canReview() ? $("filterUserId").value.trim() : "";
+  if (outcome) f.outcome = outcome;
+  if (from) f.from = new Date(from + "T00:00:00").toISOString();
+  if (to) f.to = new Date(to + "T23:59:59.999").toISOString();
+  if (q) f.q = q;
+  if (userId) f.userId = userId;
+  return f;
+}
+
+// reset=true zera offset e substitui a lista (filtro novo/atualizar).
+// reset=false acrescenta a proxima pagina (Carregar mais).
+async function loadHistory(reset = true) {
   if (!state.user) return;
+  const h = state.history;
+  if (reset) {
+    h.offset = 0;
+    h.filters = collectHistoryFilters();
+  }
+  const params = new URLSearchParams({ limit: String(h.limit), offset: String(h.offset) });
+  for (const [k, v] of Object.entries(h.filters)) params.set(k, v);
+  const list = $("historyList");
   try {
-    const body = await api("/api/makscore/history?limit=30");
-    const list = $("historyList");
-    list.innerHTML = "";
+    const body = await api("/api/makscore/history?" + params.toString());
     const items = body.items || [];
-    if (!items.length) {
+    h.total = body.total ?? items.length;
+    if (reset) list.innerHTML = "";
+    if (reset && !items.length) {
       list.innerHTML = "<div class='muted'>Nenhuma consulta encontrada.</div>";
-      return;
     }
     items.forEach((item) => {
       const div = document.createElement("div");
@@ -467,8 +497,14 @@ async function loadHistory() {
       div.addEventListener("click", () => openResult(item.correlationId));
       list.appendChild(div);
     });
+    h.offset += items.length;
+    const shown = reset ? items.length : h.offset;
+    $("historyCount").textContent = h.total
+      ? `Mostrando ${shown} de ${h.total}`
+      : "";
+    show($("loadMoreHistory"), Boolean(body.hasMore));
   } catch (err) {
-    $("historyList").innerHTML = "<div class='error'>Histórico indisponível.</div>";
+    if (reset) list.innerHTML = "<div class='error'>Histórico indisponível.</div>";
   }
 }
 
@@ -654,7 +690,13 @@ $("startEnroll").addEventListener("click", startEnrollment);
 $("verifyEnroll").addEventListener("click", verifyEnrollment);
 $("logoutBtn").addEventListener("click", logout);
 $("queryForm").addEventListener("submit", queryMakScore);
-$("refreshHistory").addEventListener("click", loadHistory);
+$("refreshHistory").addEventListener("click", () => loadHistory(true));
+$("historyFilters").addEventListener("submit", (e) => { e.preventDefault(); loadHistory(true); });
+$("clearFilters").addEventListener("click", () => {
+  $("historyFilters").reset();
+  loadHistory(true);
+});
+$("loadMoreHistory").addEventListener("click", () => loadHistory(false));
 $("reviewForm").addEventListener("submit", submitReview);
 $("cnpj").addEventListener("input", (e) => { e.target.value = maskCnpjInput(e.target.value); });
 $("ticket").addEventListener("blur", (e) => { e.target.value = fmtMoneyInput(e.target.value); });

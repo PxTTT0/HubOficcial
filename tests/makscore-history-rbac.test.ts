@@ -10,6 +10,7 @@ const ENV_KEYS = [
   "AUDIT_LOG_PATH",
   "MAKSCORE_EPOSI_MODE",
   "MAKSCORE_CNPJ_PEPPER",
+  "MAKSCORE_RATE_LIMIT_PER_MIN",
   "AUTH_SESSION_SECRET",
   "AUTH_SECURE_COOKIES",
   "AUTH_ALLOW_DEV_HEADER_AUTH",
@@ -163,6 +164,104 @@ test("MakScore history/results: RBAC + projecao por perfil + sem vazamento", { c
       assert.ok(!blob.includes(CNPJ), "CNPJ em digitos vazou");
       assert.ok(!blob.includes(CNPJ_FORMATTED), "CNPJ formatado aberto vazou");
     }
+  } finally {
+    restore(snap);
+    await server.close();
+  }
+});
+
+test("MakScore history: paginacao (total/hasMore/offset) + filtros + vendedor-own", { concurrency: false }, async () => {
+  const snap = snapshot();
+  const vendedorHash = await fastHash("SenhaForte123!");
+  const analistaHash = await fastHash("SenhaForte123!");
+  const server = await startServer({
+    NODE_ENV: "test",
+    DATABASE_URL: "",
+    REDIS_URL: "",
+    AUDIT_LOG_PATH: "",
+    MAKSCORE_EPOSI_MODE: "mock",
+    MAKSCORE_CNPJ_PEPPER: "test-pepper",
+    MAKSCORE_RATE_LIMIT_PER_MIN: "1000",
+    AUTH_SESSION_SECRET: "history-page-secret",
+    AUTH_SECURE_COOKIES: "false",
+    AUTH_ALLOW_DEV_HEADER_AUTH: "false",
+    AUTH_MFA_REQUIRED_ROLES: "",
+    AUTH_SESSION_BIND_IP_ROLES: "",
+    AUTH_USERS_JSON: JSON.stringify([
+      { id: "vend-1", username: "vendedor", role: "vendedor", passwordHash: vendedorHash },
+      { id: "vend-2", username: "vendedor2", role: "vendedor", passwordHash: vendedorHash },
+      { id: "ana-1", username: "analista", role: "analista", passwordHash: analistaHash },
+    ]),
+  });
+
+  try {
+    const vendToken = await login(server.base, "vendedor", "SenhaForte123!");
+    const vend2Token = await login(server.base, "vendedor2", "SenhaForte123!");
+    const anaToken = await login(server.base, "analista", "SenhaForte123!");
+
+    // vend-1: 3 consultas; vend-2: 1 consulta
+    for (let i = 0; i < 3; i++) {
+      await fetch(`${server.base}/api/makscore/query`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${vendToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ cnpj: CNPJ, forceRefresh: true }),
+      });
+    }
+    await fetch(`${server.base}/api/makscore/query`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${vend2Token}`, "content-type": "application/json" },
+      body: JSON.stringify({ cnpj: CNPJ, forceRefresh: true }),
+    });
+
+    // vendedor: paginacao limit=2 -> total=3, hasMore=true na 1a pagina
+    const p1 = await fetch(`${server.base}/api/makscore/history?limit=2&offset=0`, {
+      headers: { authorization: `Bearer ${vendToken}` },
+    });
+    const p1Body = (await p1.json()) as any;
+    assert.equal(p1Body.total, 3, "vendedor ve so as 3 proprias");
+    assert.equal(p1Body.items.length, 2);
+    assert.equal(p1Body.hasMore, true);
+    assert.equal(p1Body.offset, 0);
+
+    const p2 = await fetch(`${server.base}/api/makscore/history?limit=2&offset=2`, {
+      headers: { authorization: `Bearer ${vendToken}` },
+    });
+    const p2Body = (await p2.json()) as any;
+    assert.equal(p2Body.items.length, 1);
+    assert.equal(p2Body.hasMore, false);
+
+    // vendedor NAO consegue ver de terceiro mesmo passando userId na query
+    const spoof = await fetch(`${server.base}/api/makscore/history?userId=vend-2`, {
+      headers: { authorization: `Bearer ${vendToken}` },
+    });
+    const spoofBody = (await spoof.json()) as any;
+    assert.equal(spoofBody.total, 3, "userId da query e ignorado p/ vendedor");
+
+    // analista: total geral = 4; filtro por outcome=aprovado retorna so aprovados
+    const all = await fetch(`${server.base}/api/makscore/history?limit=50`, {
+      headers: { authorization: `Bearer ${anaToken}` },
+    });
+    const allBody = (await all.json()) as any;
+    assert.equal(allBody.total, 4);
+
+    const onlyAp = await fetch(`${server.base}/api/makscore/history?outcome=aprovado&limit=50`, {
+      headers: { authorization: `Bearer ${anaToken}` },
+    });
+    const onlyApBody = (await onlyAp.json()) as any;
+    for (const it of onlyApBody.items) assert.equal(it.outcome, "aprovado");
+
+    // analista filtra por userId=vend-2 -> total=1
+    const byUser = await fetch(`${server.base}/api/makscore/history?userId=vend-2&limit=50`, {
+      headers: { authorization: `Bearer ${anaToken}` },
+    });
+    const byUserBody = (await byUser.json()) as any;
+    assert.equal(byUserBody.total, 1);
+
+    // query invalida (limit > 200) -> 400
+    const bad = await fetch(`${server.base}/api/makscore/history?limit=999`, {
+      headers: { authorization: `Bearer ${vendToken}` },
+    });
+    assert.equal(bad.status, 400);
   } finally {
     restore(snap);
     await server.close();

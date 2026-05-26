@@ -164,21 +164,35 @@ export class PgMakScoreResultsRepository implements MakScoreRepository {
     return r.rows[0] ? hydrate(r.rows[0]) : null;
   }
 
+  private buildWhere(filter: MakScoreHistoryFilter): { sql: string; params: unknown[] } {
+    const cond: string[] = [];
+    const params: unknown[] = [];
+    if (filter.userId) { params.push(filter.userId); cond.push(`user_id = $${params.length}`); }
+    if (filter.outcome) { params.push(filter.outcome); cond.push(`outcome = $${params.length}`); }
+    if (filter.fromMs != null) { params.push(filter.fromMs); cond.push(`created_at_ms >= $${params.length}`); }
+    if (filter.toMs != null) { params.push(filter.toMs); cond.push(`created_at_ms <= $${params.length}`); }
+    if (filter.q) { params.push(`%${filter.q.toLowerCase()}%`); cond.push(`LOWER(cnpj_masked) LIKE $${params.length}`); }
+    return { sql: cond.length ? `WHERE ${cond.join(" AND ")}` : "", params };
+  }
+
   async listHistory(filter: MakScoreHistoryFilter): Promise<PersistedMakScore[]> {
     const limit = Math.min(Math.max(filter.limit, 1), 200);
     const offset = Math.max(filter.offset, 0);
-    if (filter.userId) {
-      const r = await this.exec.query<ResultRow>(
-        `${SELECT} WHERE user_id = $1 ORDER BY created_at_ms DESC LIMIT $2 OFFSET $3`,
-        [filter.userId, limit, offset],
-      );
-      return r.rows.map(hydrate);
-    }
+    const { sql, params } = this.buildWhere(filter);
     const r = await this.exec.query<ResultRow>(
-      `${SELECT} ORDER BY created_at_ms DESC LIMIT $1 OFFSET $2`,
-      [limit, offset],
+      `${SELECT} ${sql} ORDER BY created_at_ms DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, offset],
     );
     return r.rows.map(hydrate);
+  }
+
+  async countHistory(filter: MakScoreHistoryFilter): Promise<number> {
+    const { sql, params } = this.buildWhere(filter);
+    const r = await this.exec.query<{ n: number | string }>(
+      `SELECT COUNT(*) AS n FROM makscore_results ${sql}`,
+      params,
+    );
+    return Number(r.rows[0]?.n ?? 0);
   }
 
   async applyReview(input: ReviewActionInput): Promise<ReviewApplied | null> {

@@ -55,6 +55,10 @@ export class MakScoreService {
     return this.repo.listHistory(filter);
   }
 
+  countHistory(filter: MakScoreHistoryFilter): Promise<number> {
+    return this.repo.countHistory(filter);
+  }
+
   /** Detalhe por correlationId. RBAC/projeção ficam na camada de rota. */
   getResult(correlationId: string): Promise<PersistedMakScore | null> {
     return this.repo.findByCorrelationId(correlationId);
