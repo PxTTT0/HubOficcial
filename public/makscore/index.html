@@ -27,7 +27,7 @@
         <input id="password" type="password" autocomplete="current-password" placeholder="Senha" />
       </div>
       <button type="submit">Entrar</button>
-      <div id="loginMsg" class="hide"></div>
+      <div id="loginMsg" class="hide" role="status" aria-live="polite"></div>
     </form>
 
     <form id="mfaForm" class="grid hide">
@@ -41,7 +41,7 @@
         <button type="submit">Validar MFA</button>
         <button type="button" class="ghost" id="backToLogin">Voltar</button>
       </div>
-      <div id="mfaMsg" class="hide"></div>
+      <div id="mfaMsg" class="hide" role="status" aria-live="polite"></div>
     </form>
 
     <div id="enrollBox" class="grid hide">
@@ -62,8 +62,8 @@
         </div>
         <button id="verifyEnroll">Concluir MFA</button>
       </div>
-      <div id="recoveryCodes" class="notice hide"></div>
-      <div id="enrollMsg" class="hide"></div>
+      <div id="recoveryCodes" class="notice hide" role="status" aria-live="polite"></div>
+      <div id="enrollMsg" class="hide" role="status" aria-live="polite"></div>
     </div>
   </section>
 </div>
@@ -96,7 +96,7 @@
         <h1 id="pageTitle">Consulta MakScore</h1>
         <p id="pageSub" class="sub">Consulte, acompanhe histórico e registre análise manual quando aplicável.</p>
       </div>
-      <div id="globalMsg" class="hide"></div>
+      <div id="globalMsg" class="hide" role="status" aria-live="polite"></div>
     </header>
 
     <section id="view-query" class="grid cols">
@@ -208,10 +208,10 @@
         </div>
       </form>
 
-      <div id="historyList" class="list mt-16"></div>
+      <div id="historyList" class="list mt-16" role="list" aria-busy="false"></div>
 
       <div class="actions between mt-16">
-        <span id="historyCount" class="small muted"></span>
+        <span id="historyCount" class="small muted" role="status" aria-live="polite"></span>
         <button id="loadMoreHistory" class="ghost hide">Carregar mais</button>
       </div>
     </section>
