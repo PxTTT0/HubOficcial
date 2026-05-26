@@ -11,6 +11,9 @@ const state = {
   qStep: null,
   // Paginacao/filtros do historico.
   history: { offset: 0, limit: 20, total: 0, filters: {} },
+  // Cache de pre-consulta E-POSI: { cnpj, result } -- evita re-fetch
+  // quando o CNPJ nao mudou desde a ultima pre-consulta.
+  prefill: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -132,7 +135,13 @@ function renderQuestionnaire() {
   box.querySelectorAll(".q-step").forEach((b) => b.addEventListener("click", () => setQStep(b.dataset.step)));
   box.querySelectorAll("[data-q-nav]").forEach((b) => b.addEventListener("click", () => stepBy(b.dataset.qNav === "next" ? 1 : -1)));
   box.querySelectorAll("[data-q-bulk]").forEach((b) => b.addEventListener("click", () => bulkSection(b.dataset.qBulk === "mark")));
-  box.querySelectorAll("input[type=checkbox]").forEach((i) => i.addEventListener("change", updateQuestionnaireScore));
+  box.querySelectorAll("input[type=checkbox]").forEach((i) =>
+    i.addEventListener("change", () => {
+      // Vendedor interagiu: nao e mais "auto" -- remove o badge.
+      i.closest(".check")?.removeAttribute("data-suggested");
+      updateQuestionnaireScore();
+    }),
+  );
   setQStep(state.qStep);
   updateQuestionnaireScore();
 }
@@ -218,6 +227,79 @@ async function loadQuestionnaireSchema() {
     catch { state.questionnaire = null; }
   }
   renderQuestionnaire();
+}
+
+// ─── Pre-consulta E-POSI (auto no blur do CNPJ) ──────────────────────
+// Quando o vendedor termina de digitar um CNPJ valido (14 digitos) e
+// tira o foco do campo, faz uma consulta cadastral leve no E-POSI (sem
+// decisao, sem persistencia). O retorno alimenta um snapshot visivel e
+// pre-marca itens do questionario que sao deriváveis dos dados externos
+// (situacao cadastral, idade da empresa, score, restritivos).
+//
+// O vendedor SEMPRE pode revisar/desmarcar -- a decisao oficial usa o
+// estado FINAL dos checkboxes no submit do MakScore.
+async function prefillFromCnpj(digitsCnpj) {
+  if (digitsCnpj.length !== 14) return;
+  if (state.prefill?.cnpj === digitsCnpj) return; // mesma consulta
+  const status = $("prefillStatus");
+  msg(status, "Pré-consultando E-POSI…", "info");
+  try {
+    const body = await api("/api/makscore/prefill", {
+      method: "POST",
+      body: JSON.stringify({ cnpj: digitsCnpj }),
+    });
+    state.prefill = { cnpj: digitsCnpj, result: body };
+    renderPrefillSnapshot(body);
+    applyPrefillToQuestionnaire(body.suggestion || { answers: {}, sources: [] });
+    msg(status, "", "info");
+  } catch (err) {
+    msg(status, "Pré-consulta indisponível: " + err.message, "error");
+  }
+}
+
+// Renderiza o resumo cadastral acima do questionario. Reforco visual
+// para o vendedor ter contexto antes/durante o preenchimento.
+function renderPrefillSnapshot(body) {
+  const el = $("prefillSnapshot");
+  if (!el) return;
+  el.innerHTML = `
+    <div class="snapshot-row"><strong>${esc(body.razaoSocial || "-")}</strong>
+      <span class="pill ${esc(body.cadastralStatus)}">${esc(body.cadastralStatus || "-")}</span></div>
+    <div class="small muted">
+      Score E-POSI: <strong>${esc(body.score ?? "-")}</strong> ·
+      Negativação: <strong>${body.hasNegativacao ? "sim" : "não"}</strong> ·
+      Protesto: <strong>${body.hasProtesto ? "sim" : "não"}</strong>
+      ${body.cnaePrincipal ? ` · CNAE: <strong>${esc(body.cnaePrincipal)}</strong>` : ""}
+      ${body.sourceIsMock ? " · <em>(mock)</em>" : ""}
+    </div>
+  `;
+  show(el, true);
+}
+
+// Marca os checkboxes sugeridos. Cada item marcado ganha data-suggested
+// no `.check` (estilização do badge "auto" via CSS). O badge some
+// quando o vendedor interage com aquele item (change handler limpa o
+// flag e tambem em todas as outras renderizacoes do questionario).
+function applyPrefillToQuestionnaire(suggestion) {
+  const answers = suggestion.answers || {};
+  // Limpa flag antigo antes de remarcar (caso CNPJ tenha mudado).
+  document.querySelectorAll(".check[data-suggested]").forEach((el) =>
+    el.removeAttribute("data-suggested"),
+  );
+  for (const group of ["bloqueios", "pilares", "agravantes", "mitigadores"]) {
+    const map = answers[group];
+    if (!map) continue;
+    for (const [key, val] of Object.entries(map)) {
+      const input = document.querySelector(
+        `input[data-q-group="${group}"][data-q-key="${key}"]`,
+      );
+      if (input) {
+        input.checked = Boolean(val);
+        input.closest(".check")?.setAttribute("data-suggested", "true");
+      }
+    }
+  }
+  updateQuestionnaireScore();
 }
 
 async function api(path, options = {}) {
@@ -725,6 +807,12 @@ $("reviewForm").addEventListener("submit", submitReview);
 $("printResult")?.addEventListener("click", () => window.print());
 $("printDetail")?.addEventListener("click", () => window.print());
 $("cnpj").addEventListener("input", (e) => { e.target.value = maskCnpjInput(e.target.value); });
+// Pre-consulta E-POSI assim que o vendedor finaliza um CNPJ valido e
+// tira o foco. Cancela cedo se o CNPJ ainda nao tem 14 digitos.
+$("cnpj").addEventListener("blur", (e) => {
+  const digits = e.target.value.replace(/\D/g, "");
+  prefillFromCnpj(digits);
+});
 $("ticket").addEventListener("blur", (e) => { e.target.value = fmtMoneyInput(e.target.value); });
 document.querySelectorAll(".nav button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 

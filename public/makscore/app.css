@@ -277,6 +277,36 @@ h3 { font-size: 1.1rem; }
 .rulehits { display: grid; gap: 8px; margin-top: 8px; }
 .rulehit { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; background: rgba(255,255,255,.5); }
 
+/* Pre-consulta E-POSI: snapshot cadastral acima do questionario. */
+.prefill-snapshot {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,.6);
+  display: grid;
+  gap: 6px;
+}
+.prefill-snapshot .snapshot-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+/* Itens auto-marcados a partir da E-POSI ganham um badge "auto" sutil.
+   O badge some assim que o vendedor interage com o checkbox (handler
+   no JS remove o data-suggested). */
+.check[data-suggested="true"] {
+  background: rgba(252,192,10,.08);
+  border-left: 3px solid var(--brand);
+  padding-left: 8px;
+  border-radius: 8px;
+}
+.check[data-suggested="true"] .pts::before {
+  content: "auto · ";
+  color: var(--brand-2);
+  font-weight: 800;
+}
+
 /* Decisao efetiva (destaque) */
 .effective {
   display: flex; gap: 10px; align-items: center; flex-wrap: wrap;

@@ -31,6 +31,11 @@ const QuerySchema = z.object({
   // commercialContext NAO entra no Zod nesta fase (reservado, sem uso).
 });
 
+const PrefillSchema = z.object({
+  cnpj: z.string().min(11).max(20),
+  product: z.enum(["TOTAL_PJ", "COMPLETA_PJ"]).optional(),
+});
+
 const HistorySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
   offset: z.coerce.number().int().nonnegative().optional(),
@@ -394,6 +399,51 @@ export function buildMakScoreRouter(
       }
     },
   );
+
+  // Pre-consulta E-POSI: o front chama quando o vendedor termina de
+  // digitar o CNPJ. Retorna snapshot cadastral + sugestoes para o
+  // questionario, SEM decidir e SEM persistir. Rate limit compartilhado
+  // com /query para evitar abuse via prefill.
+  router.post("/prefill", async (req, res) => {
+    const parse = PrefillSchema.safeParse(req.body);
+    if (!parse.success) {
+      res.status(400).json({ error: "invalid_input", details: parse.error.flatten() });
+      return;
+    }
+    const userId = req.user!.id;
+    const ip = req.ip || req.socket.remoteAddress || "unknown";
+    const rl = await limiter.check(`${userId}:${ip}`);
+    res.setHeader("X-RateLimit-MakScore-Remaining", String(rl.remaining));
+    res.setHeader("X-RateLimit-MakScore-Reset", String(Math.ceil(rl.resetAtMs / 1000)));
+    if (!rl.ok) {
+      res.setHeader("Retry-After", String(rl.retryAfterSec));
+      security.audit.write({
+        ts: new Date().toISOString(),
+        scope: "makscore",
+        type: "prefill.rate_limited",
+        severity: "warn",
+        outcome: "failure",
+        reason: "rate_limited",
+        ...buildAuditContext(req, { userId: req.user?.id, role: req.user?.role }),
+      });
+      res.status(429).json({ error: "rate_limited" });
+      return;
+    }
+    try {
+      const result = await service.prefill({
+        cnpj: onlyDigits(parse.data.cnpj),
+        product: parse.data.product,
+        userId,
+      });
+      res.json(result);
+    } catch (err) {
+      if (err instanceof MakScoreInputError) {
+        res.status(422).json({ error: err.code, message: err.message });
+        return;
+      }
+      res.status(503).json({ error: "prefill_unavailable" });
+    }
+  });
 
   // Schema do questionario (fonte unica). Qualquer perfil autenticado
   // pode obter para renderizar o formulario e prever o score.

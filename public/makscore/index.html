@@ -103,7 +103,9 @@
         <h2>Nova consulta</h2>
         <div>
           <label for="cnpj">CNPJ</label>
-          <input id="cnpj" inputmode="numeric" autocomplete="off" placeholder="00.000.000/0000-00" />
+          <input id="cnpj" inputmode="numeric" autocomplete="off" placeholder="00.000.000/0000-00" aria-describedby="prefillStatus" />
+          <div id="prefillStatus" class="small muted mt-8 hide" role="status" aria-live="polite"></div>
+          <div id="prefillSnapshot" class="prefill-snapshot hide" aria-live="polite"></div>
         </div>
         <div class="row">
           <div>
