@@ -14,10 +14,22 @@ import type {
   MakScoreContext,
   MakScoreResult,
   MakScoreReviewEvent,
+  MakScoreReviewStatus,
   PersistedMakScore,
   ReviewActionInput,
   ReviewApplied,
 } from "./types";
+
+/**
+ * Retorno publico de `service.query`. Inclui `reviewStatus` para que a
+ * rota possa compor a decisao efetiva corretamente mesmo em cache hit
+ * (consulta repetida apos analise manual). Nunca inclui campos
+ * exclusivos de persistencia (cnpjHash/createdAtMs/etc.) -- esses ficam
+ * confinados ao repositorio.
+ */
+export interface MakScoreQueryResult extends MakScoreResult {
+  reviewStatus: MakScoreReviewStatus;
+}
 import {
   InMemoryAuditSink,
   makeAuditEvent,
@@ -85,7 +97,7 @@ export class MakScoreService {
     });
   }
 
-  async query(input: QueryInput): Promise<MakScoreResult> {
+  async query(input: QueryInput): Promise<MakScoreQueryResult> {
     const correlationId = randomUUID();
     const cnpj = onlyDigits(input.cnpj);
     const product = input.product ?? this.cfg.defaultProduct;
@@ -130,11 +142,27 @@ export class MakScoreService {
             userId: input.context?.userId,
           }),
         );
-        return { ...cached, correlationId };
+        // IMPORTANTE: nao espalhar `cached` direto. PersistedMakScore tem
+        // campos so de persistencia (cnpjHash/createdAtMs/expiresAtMs/
+        // reviewerId/reviewNote/reviewedAt) que NUNCA devem sair do
+        // repositorio na resposta de /query. reviewStatus vem separado
+        // para a rota compor effectiveDecision (manual sobrepoe automatico
+        // mesmo em cache hit).
+        const {
+          cnpjHash: _cnpjHash,
+          createdAtMs: _createdAtMs,
+          expiresAtMs: _expiresAtMs,
+          reviewerId: _reviewerId,
+          reviewNote: _reviewNote,
+          reviewedAt: _reviewedAt,
+          reviewStatus,
+          ...publicResult
+        } = cached;
+        return { ...publicResult, correlationId, reviewStatus };
       }
     }
 
-    let result: MakScoreResult;
+    let result: MakScoreQueryResult;
     try {
       const raw = await this.client.query(cnpj, product);
       this.emitAudit(
@@ -186,10 +214,13 @@ export class MakScoreService {
         },
         context: input.context,
         questionnaire,
+        // Consulta fresca: ainda nao tem analise manual.
+        reviewStatus: "none",
       };
 
+      const { reviewStatus: _rs, ...resultForPersist } = result;
       const persisted: PersistedMakScore = {
-        ...result, // result.cnpj ja vem mascarado (minimizacao em toda a app)
+        ...resultForPersist, // cnpj ja mascarado (minimizacao em toda a app)
         cnpjHash: hashCnpj(cnpj),
         createdAtMs: consultedAt.getTime(),
         expiresAtMs: validUntilMs,
@@ -256,6 +287,8 @@ export class MakScoreService {
               score: scoreQuestionnaire(input.context.questionnaire),
             }
           : undefined,
+        // Falha externa: sem persistencia, logo sem review.
+        reviewStatus: "none",
       };
     }
   }

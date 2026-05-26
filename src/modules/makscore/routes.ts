@@ -165,7 +165,7 @@ export function buildMakScoreRouter(
       return;
     }
     try {
-      const result = await service.query({
+      const queryResult = await service.query({
         cnpj: onlyDigits(parse.data.cnpj),
         product: parse.data.product,
         forceRefresh: parse.data.forceRefresh,
@@ -177,10 +177,19 @@ export function buildMakScoreRouter(
           questionnaire: parse.data.questionnaire,
         },
       });
+      // Separa reviewStatus (so analista/admin enxerga) e usa o valor REAL
+      // para compor effectiveDecision -- garante que cache hit apos analise
+      // manual reflita o veredicto do analista (e nao "automatico/none").
+      const { reviewStatus, ...result } = queryResult;
+      const role = req.user?.role;
+      const projected = projectForRole(result, security, role);
+      const tail = canSeeTechnicalDetails(security, role as any)
+        ? { reviewStatus }
+        : {};
       res.json({
-        ...projectForRole(result, security, req.user?.role),
-        // consulta fresca ainda nao tem review -> efetiva = automatica
-        effectiveDecision: computeEffectiveDecision(result.outcome, "none"),
+        ...projected,
+        ...tail,
+        effectiveDecision: computeEffectiveDecision(result.outcome, reviewStatus),
       });
     } catch (err) {
       if (err instanceof MakScoreInputError) {
