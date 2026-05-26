@@ -263,7 +263,6 @@ async function bootstrap() {
       return;
     }
     showAuthenticated(true);
-    await loadHistory();
   } catch {
     showAuthenticated(false);
   }
@@ -275,8 +274,6 @@ function showAuthenticated(ok) {
   if (!ok) return;
   $("sessionUser").textContent = state.user?.id || "-";
   $("sessionRole").textContent = state.user?.role || "-";
-  // Filtro por usuario so faz sentido p/ analista/admin (veem geral).
-  show($("filterUserIdField"), canReview());
   showView(state.currentView || "query");
   // Schema do questionario (fonte unica) carregado apos autenticar.
   loadQuestionnaireSchema();
@@ -326,7 +323,6 @@ async function login(e) {
         return;
       }
       showAuthenticated(true);
-      await loadHistory();
     } catch (err) {
       msg($("loginMsg"), "Não foi possível entrar. Verifique usuário e senha.");
     }
@@ -350,7 +346,6 @@ async function submitMfa(e) {
       state.csrfToken = body.csrfToken;
       state.challengeToken = null;
       showAuthenticated(true);
-      await loadHistory();
     } catch {
       msg($("mfaMsg"), "Código inválido ou expirado.");
     }
@@ -387,7 +382,6 @@ async function verifyEnrollment() {
       state.user = body.user;
       state.csrfToken = body.csrfToken;
       showAuthenticated(true);
-      await loadHistory();
     } catch {
       msg($("enrollMsg"), "Código inválido.");
     }
@@ -445,7 +439,6 @@ async function queryMakScore(e) {
       state.currentResult = result;
       show($("resultCard"), true);
       msg($("globalMsg"), "", "info");
-      await loadHistory();
     } catch (err) {
       msg($("globalMsg"), "Consulta não concluída: " + err.message);
     }
@@ -722,14 +715,15 @@ $("startEnroll").addEventListener("click", startEnrollment);
 $("verifyEnroll").addEventListener("click", verifyEnrollment);
 $("logoutBtn").addEventListener("click", logout);
 $("queryForm").addEventListener("submit", queryMakScore);
-$("refreshHistory").addEventListener("click", () => loadHistory(true));
-$("historyFilters").addEventListener("submit", (e) => { e.preventDefault(); loadHistory(true); });
-$("clearFilters").addEventListener("click", () => {
-  $("historyFilters").reset();
-  loadHistory(true);
-});
-$("loadMoreHistory").addEventListener("click", () => loadHistory(false));
+// Modo emergencial: a UI de historico fica desativada (nav + view ocultos).
+// O backend continua intacto -- voltar a expor requer apenas religar o nav.
+// loadHistory() permanece definido para reuso futuro.
 $("reviewForm").addEventListener("submit", submitReview);
+// Botoes de impressao: imprimem APENAS o card alvo (resultCard ou
+// detail card). O CSS @media print esconde a sidebar e os controles
+// ("no-print"); o browser oferece "Salvar como PDF" no dialog padrao.
+$("printResult")?.addEventListener("click", () => window.print());
+$("printDetail")?.addEventListener("click", () => window.print());
 $("cnpj").addEventListener("input", (e) => { e.target.value = maskCnpjInput(e.target.value); });
 $("ticket").addEventListener("blur", (e) => { e.target.value = fmtMoneyInput(e.target.value); });
 document.querySelectorAll(".nav button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));

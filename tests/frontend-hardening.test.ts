@@ -108,6 +108,39 @@ test("A11y: mensagens tem aria-live e historico usa lista interativa", { concurr
   }
 });
 
+test("Tema Makfil amarelo (#FCC00A) + recibo imprimivel + sem nav de historico", { concurrency: false }, async () => {
+  const snap = snapshot();
+  const server = await startServer();
+  try {
+    const css = await (await fetch(`${server.base}/makscore/app.css`)).text();
+    // Brand amarelo Makfil.
+    assert.match(css, /--brand:\s*#FCC00A/i);
+    // Texto sobre brand precisa ser escuro (contraste WCAG).
+    assert.match(css, /--brand-ink:/);
+    // Modo de impressao definido para gerar recibo em PDF nativo.
+    assert.match(css, /@media print\b/);
+    assert.match(css, /\.print-target\b/);
+    // Cabecalho do recibo via pseudo-elemento.
+    assert.match(css, /Hub MakScore — Relat/);
+
+    const html = await (await fetch(`${server.base}/makscore/`)).text();
+    // Botoes de imprimir disponiveis em resultado e em detalhe.
+    assert.match(html, /id=["']printResult["']/);
+    assert.match(html, /id=["']printDetail["']/);
+    // Cards alvo do print marcados.
+    assert.match(html, /class=["'][^"']*print-target/);
+    // Nav nao tem mais a tab "Historico" (modo emergencial sem PG).
+    assert.ok(!/<button[^>]*data-view=["']history["']/.test(html), "nav nao deve ter botao de historico");
+
+    const js = await (await fetch(`${server.base}/makscore/app.js`)).text();
+    // Listeners de print acionam window.print() nativo (CSP-safe).
+    assert.match(js, /window\.print\(\)/);
+  } finally {
+    restore(snap);
+    await server.close();
+  }
+});
+
 test("index.html nao tem JS/CSS inline nem style= (compativel com CSP estrita)", { concurrency: false }, async () => {
   const snap = snapshot();
   const server = await startServer();

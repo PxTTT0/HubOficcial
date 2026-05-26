@@ -79,7 +79,6 @@
     </div>
     <nav class="nav">
       <button data-view="query" class="active">Consultar CNPJ</button>
-      <button data-view="history">Histórico</button>
       <button data-view="detail">Detalhe</button>
     </nav>
     <div class="session">
@@ -144,10 +143,13 @@
         <button type="submit">Gerar MakScore</button>
       </form>
 
-      <section id="resultCard" class="card hide">
+      <section id="resultCard" class="card hide print-target">
         <div class="actions between">
           <h2>Resultado</h2>
-          <span id="resultOutcome" class="pill">-</span>
+          <div class="actions">
+            <span id="resultOutcome" class="pill">-</span>
+            <button type="button" id="printResult" class="ghost no-print" aria-label="Imprimir ou salvar como PDF">Imprimir / PDF</button>
+          </div>
         </div>
         <div class="row three mt-14">
           <div class="metric"><span>Score</span><strong id="resultScore">-</strong></div>
@@ -217,10 +219,13 @@
     </section>
 
     <section id="view-detail" class="grid cols hide">
-      <section class="card">
+      <section class="card print-target">
         <div class="actions between">
           <h2>Detalhe</h2>
-          <span id="detailOutcome" class="pill">-</span>
+          <div class="actions">
+            <span id="detailOutcome" class="pill">-</span>
+            <button type="button" id="printDetail" class="ghost no-print" aria-label="Imprimir ou salvar como PDF">Imprimir / PDF</button>
+          </div>
         </div>
         <div id="detailBody" class="grid mt-16"></div>
       </section>
