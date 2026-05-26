@@ -8,6 +8,11 @@ function asJson<T>(value: unknown): T {
 }
 
 async function startServer(env: Record<string, string>) {
+  // Snapshot dos valores anteriores das chaves que vamos sobrescrever.
+  // Sem isso, qualquer env setado aqui (ex.: RATE_LIMIT_PER_MIN="1") vaza
+  // p/ os testes seguintes na mesma execucao, poluindo o estado global.
+  const prev: Record<string, string | undefined> = {};
+  for (const key of Object.keys(env)) prev[key] = process.env[key];
   for (const [key, value] of Object.entries(env)) {
     process.env[key] = value;
   }
@@ -27,6 +32,11 @@ async function startServer(env: Record<string, string>) {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
       });
+      // Restaura os valores originais (incluindo unset se nao existiam).
+      for (const key of Object.keys(env)) {
+        if (prev[key] === undefined) delete process.env[key];
+        else process.env[key] = prev[key]!;
+      }
     },
   };
 }
