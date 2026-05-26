@@ -25,8 +25,9 @@ test("computeEffectiveDecision: manual sobrepoe; sem review usa automatico", () 
 
 const ENV_KEYS = [
   "NODE_ENV", "DATABASE_URL", "REDIS_URL", "AUDIT_LOG_PATH", "MAKSCORE_EPOSI_MODE",
-  "MAKSCORE_CNPJ_PEPPER", "AUTH_SESSION_SECRET", "AUTH_SECURE_COOKIES",
-  "AUTH_MFA_REQUIRED_ROLES", "AUTH_SESSION_BIND_IP_ROLES", "AUTH_USERS_JSON",
+  "MAKSCORE_CNPJ_PEPPER", "MAKSCORE_RATE_LIMIT_PER_MIN", "AUTH_SESSION_SECRET",
+  "AUTH_SECURE_COOKIES", "AUTH_MFA_REQUIRED_ROLES", "AUTH_SESSION_BIND_IP_ROLES",
+  "AUTH_USERS_JSON",
 ];
 function snapshot() { return Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]])); }
 function restore(s: Record<string, string | undefined>) {
@@ -84,6 +85,28 @@ test("HTTP: effectiveDecision automatica na query e manual apos review", { concu
     const dBody = (await detail.json()) as any;
     assert.equal(dBody.effectiveDecision.status, "reprovado");
     assert.equal(dBody.effectiveDecision.source, "manual");
+
+    // BUG REGRESSION: cache hit apos analise manual precisa propagar o
+    // veredicto do analista. Antes, /query devolvia effectiveDecision
+    // "automatic/none" mesmo com review rejected -> vendedor consultava
+    // de novo e via "aprovado automatico" no lugar do "reprovado manual".
+    const cacheHit = await fetch(`${base}/api/makscore/query`, {
+      method: "POST", headers: auth, body: JSON.stringify({ cnpj: "11222333000181" }),
+    });
+    assert.equal(cacheHit.status, 200);
+    const cacheBody = (await cacheHit.json()) as any;
+    // Deve ser cache hit do MESMO registro (mesmo outcome automatico).
+    assert.equal(cacheBody.outcome, qBody.outcome);
+    // E a decisao efetiva agora reflete o reviewStatus do registro cacheado.
+    assert.equal(cacheBody.effectiveDecision.status, "reprovado");
+    assert.equal(cacheBody.effectiveDecision.source, "manual");
+
+    // BUG REGRESSION: cache hit NAO pode vazar campos de persistencia.
+    // Antes, o /query espalhava o PersistedMakScore inteiro em cache hit,
+    // expondo cnpjHash/createdAtMs/expiresAtMs/reviewerId/reviewNote/reviewedAt.
+    for (const leaked of ["cnpjHash", "createdAtMs", "expiresAtMs", "reviewerId", "reviewNote", "reviewedAt"]) {
+      assert.equal(cacheBody[leaked], undefined, `cache hit vazou ${leaked}`);
+    }
   } finally {
     restore(snap);
     await new Promise<void>((r, j) => server.close((e) => (e ? j(e) : r())));
