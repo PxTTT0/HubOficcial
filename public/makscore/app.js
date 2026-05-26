@@ -395,6 +395,9 @@ async function verifyEnrollment() {
 }
 
 async function logout() {
+  // Confirma antes p/ evitar saida acidental (clique no botao da sidebar
+  // perto do menu de navegacao). window.confirm e CSP-safe e acessivel.
+  if (!window.confirm("Encerrar a sessão MakScore?")) return;
   try { await api("/api/auth/logout", { method: "POST", body: "{}" }); } catch {}
   state.user = null;
   state.csrfToken = null;
@@ -433,12 +436,15 @@ async function queryMakScore(e) {
     questionnaire: collectQuestionnaire(),
     forceRefresh: $("forceRefresh").checked || undefined,
   };
+  // Indicador visivel + acessivel enquanto a consulta roda.
+  msg($("globalMsg"), "Consultando MakScore…", "info");
   await withBusy(e.submitter, async () => {
     try {
       const result = await api("/api/makscore/query", { method: "POST", body: JSON.stringify(payload) });
       renderResult(result);
       state.currentResult = result;
       show($("resultCard"), true);
+      msg($("globalMsg"), "", "info");
       await loadHistory();
     } catch (err) {
       msg($("globalMsg"), "Consulta não concluída: " + err.message);
@@ -475,6 +481,18 @@ async function loadHistory(reset = true) {
   const params = new URLSearchParams({ limit: String(h.limit), offset: String(h.offset) });
   for (const [k, v] of Object.entries(h.filters)) params.set(k, v);
   const list = $("historyList");
+  const more = $("loadMoreHistory");
+  // Loading state visivel: aria-busy p/ leitor de tela + placeholder
+  // textual no reset. Em "carregar mais", desabilita o proprio botao
+  // e troca o rotulo enquanto a request roda.
+  list.setAttribute("aria-busy", "true");
+  if (reset) list.innerHTML = "<div class='muted small'>Carregando histórico…</div>";
+  let moreLabel;
+  if (!reset && more) {
+    moreLabel = more.textContent;
+    more.disabled = true;
+    more.textContent = "Carregando…";
+  }
   try {
     const body = await api("/api/makscore/history?" + params.toString());
     const items = body.items || [];
@@ -484,9 +502,17 @@ async function loadHistory(reset = true) {
       list.innerHTML = "<div class='muted'>Nenhuma consulta encontrada.</div>";
     }
     items.forEach((item) => {
-      const div = document.createElement("div");
-      div.className = "item";
-      div.innerHTML = `
+      // <button> em vez de <div>: focavel por teclado nativamente,
+      // anuncia como interativo p/ leitor de tela e responde a
+      // Enter/Espaco sem JS extra. role="listitem" liga ao role="list"
+      // do container para navegacao consistente.
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "item";
+      btn.setAttribute("role", "listitem");
+      btn.setAttribute("aria-label",
+        `Consulta ${item.cnpj || "-"}, ${String(item.outcome || "-").replaceAll("_", " ")}, em ${fmtDate(item.consultedAt)}`);
+      btn.innerHTML = `
         <div class="actions between">
           <strong>${esc(item.cnpj || "-")}</strong>
           <span class="pill ${esc(item.outcome)}">${esc(String(item.outcome || "-").replaceAll("_", " "))}</span>
@@ -494,8 +520,8 @@ async function loadHistory(reset = true) {
         <div class="small muted">${esc(fmtDate(item.consultedAt))} · Score ${esc(item.score ?? "-")} · Risco ${esc(item.riskLevel ?? "-")}</div>
         <div class="small">${esc(item.recommendedAction || "")}</div>
       `;
-      div.addEventListener("click", () => openResult(item.correlationId));
-      list.appendChild(div);
+      btn.addEventListener("click", () => openResult(item.correlationId));
+      list.appendChild(btn);
     });
     h.offset += items.length;
     const shown = reset ? items.length : h.offset;
@@ -505,6 +531,12 @@ async function loadHistory(reset = true) {
     show($("loadMoreHistory"), Boolean(body.hasMore));
   } catch (err) {
     if (reset) list.innerHTML = "<div class='error'>Histórico indisponível.</div>";
+  } finally {
+    list.setAttribute("aria-busy", "false");
+    if (more && moreLabel !== undefined) {
+      more.disabled = false;
+      more.textContent = moreLabel;
+    }
   }
 }
 

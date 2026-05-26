@@ -78,6 +78,36 @@ test("assets externos servidos: app.js e app.css", { concurrency: false }, async
   }
 });
 
+test("A11y: mensagens tem aria-live e historico usa lista interativa", { concurrency: false }, async () => {
+  const snap = snapshot();
+  const server = await startServer();
+  try {
+    const html = await (await fetch(`${server.base}/makscore/`)).text();
+    // Mensagens dinamicas: leitor de tela precisa anunciar mudancas.
+    for (const id of ["loginMsg", "mfaMsg", "enrollMsg", "globalMsg", "recoveryCodes", "historyCount"]) {
+      const re = new RegExp(`id=["']${id}["'][^>]*aria-live=["']polite["']`);
+      assert.match(html, re, `${id} precisa de aria-live="polite"`);
+    }
+    // Container da lista usa role="list" e expoe aria-busy p/ loading state.
+    assert.match(html, /id=["']historyList["'][^>]*role=["']list["']/);
+    assert.match(html, /id=["']historyList["'][^>]*aria-busy=["']false["']/);
+
+    const js = await (await fetch(`${server.base}/makscore/app.js`)).text();
+    // Itens do historico DEVEM ser <button> (focaveis via teclado +
+    // anunciam-se como interativos). Regressao do bug onde eram <div>
+    // com click handler -- inalcancaveis por teclado/leitor de tela.
+    assert.match(js, /createElement\(["']button["']\)[\s\S]{0,120}className\s*=\s*["']item["']/);
+    // Confirmacao de logout: defesa contra clique acidental.
+    assert.match(js, /window\.confirm\(/);
+    // Loading state visivel + acessivel.
+    assert.match(js, /aria-busy["']\s*,\s*["']true["']/);
+    assert.match(js, /Carregando hist/);
+  } finally {
+    restore(snap);
+    await server.close();
+  }
+});
+
 test("index.html nao tem JS/CSS inline nem style= (compativel com CSP estrita)", { concurrency: false }, async () => {
   const snap = snapshot();
   const server = await startServer();

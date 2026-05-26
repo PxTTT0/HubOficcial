@@ -192,8 +192,16 @@ h3 { font-size: 1.1rem; }
   padding: 14px;
   background: rgba(255,255,255,.55);
   cursor: pointer;
+  /* Reset p/ quando `.item` e <button> (focavel por teclado/leitor de tela). */
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  display: block;
+  box-shadow: none;
 }
 .item:hover { border-color: rgba(15,107,79,.35); transform: translateY(-1px); }
+.item:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .kv { display: flex; justify-content: space-between; gap: 18px; padding: 9px 0; border-bottom: 1px dashed var(--line); }
 .kv:last-child { border-bottom: 0; }
 .kv span:first-child { color: var(--muted); font-weight: 700; }
