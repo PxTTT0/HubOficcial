@@ -4,7 +4,10 @@
   --paper: #fffaf0;
   --panel: rgba(255, 255, 255, .82);
   --line: rgba(18, 33, 27, .14);
-  --brand: #0f6b4f;
+  /* Brand Makfil: amarelo #FCC00A. Texto sobre brand DEVE ser escuro
+     (--ink) -- branco em amarelo nao atinge contraste AA. */
+  --brand: #FCC00A;
+  --brand-ink: #12211b;
   --brand-2: #d97706;
   --danger: #b42318;
   --warn: #b7791f;
@@ -19,9 +22,9 @@ body {
   color: var(--ink);
   font: 16px/1.45 Georgia, "Times New Roman", serif;
   background:
-    radial-gradient(circle at 12% 8%, rgba(15,107,79,.18), transparent 28rem),
+    radial-gradient(circle at 12% 8%, rgba(252,192,10,.18), transparent 28rem),
     radial-gradient(circle at 90% 14%, rgba(217,119,6,.18), transparent 24rem),
-    linear-gradient(135deg, #f8ecd0 0%, #eef7ec 52%, #e8f0ff 100%);
+    linear-gradient(135deg, #fff7d6 0%, #fef0c3 52%, #fff0e0 100%);
 }
 body::before {
   content: "";
@@ -40,15 +43,19 @@ button {
   border-radius: 999px;
   padding: 12px 18px;
   background: var(--brand);
-  color: white;
+  /* Texto escuro sobre amarelo: contraste ~12:1 (AA grande/normal ok). */
+  color: var(--brand-ink);
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 10px 22px rgba(15,107,79,.18);
+  box-shadow: 0 10px 22px rgba(252,192,10,.28);
 }
-button.secondary { background: #20332b; }
+/* Variantes em fundos escuros precisam de texto claro -- o default do
+   button virou escuro para casar com o brand amarelo, entao cada
+   variante reafirma a cor do texto. */
+button.secondary { background: #20332b; color: white; }
 button.ghost { background: transparent; color: var(--ink); box-shadow: none; border: 1px solid var(--line); }
-button.warn { background: var(--brand-2); }
-button.danger { background: var(--danger); }
+button.warn { background: var(--brand-2); color: white; }
+button.danger { background: var(--danger); color: white; }
 button[disabled] { opacity: .58; cursor: not-allowed; }
 input, select, textarea {
   width: 100%;
@@ -59,7 +66,7 @@ input, select, textarea {
   padding: 12px 14px;
   outline: none;
 }
-input:focus, select:focus, textarea:focus { border-color: rgba(15,107,79,.55); box-shadow: 0 0 0 4px rgba(15,107,79,.1); }
+input:focus, select:focus, textarea:focus { border-color: rgba(252,192,10,.55); box-shadow: 0 0 0 4px rgba(252,192,10,.1); }
 label { display: block; margin: 0 0 6px; color: var(--muted); font-size: .86rem; font-weight: 700; }
 .app { min-height: 100vh; display: grid; grid-template-columns: 280px 1fr; }
 .side {
@@ -76,8 +83,8 @@ label { display: block; margin: 0 0 6px; color: var(--muted); font-size: .86rem;
 .seal {
   width: 44px; height: 44px; border-radius: 50%;
   display: grid; place-items: center;
-  background: conic-gradient(from 210deg, var(--brand), #95c37d, var(--brand-2), var(--brand));
-  color: white; font-weight: 900;
+  background: conic-gradient(from 210deg, var(--brand), #ffd966, var(--brand-2), var(--brand));
+  color: var(--ink); font-weight: 900;
 }
 .nav { display: grid; gap: 8px; }
 .nav button {
@@ -89,7 +96,7 @@ label { display: block; margin: 0 0 6px; color: var(--muted); font-size: .86rem;
   box-shadow: none;
   border: 1px solid transparent;
 }
-.nav button.active { background: rgba(15,107,79,.1); border-color: rgba(15,107,79,.22); }
+.nav button.active { background: rgba(252,192,10,.1); border-color: rgba(252,192,10,.22); }
 .session {
   position: absolute;
   left: 24px;
@@ -155,10 +162,10 @@ h3 { font-size: 1.1rem; }
 .score-panel {
   display: grid;
   gap: 12px;
-  border: 1px solid rgba(15,107,79,.18);
+  border: 1px solid rgba(252,192,10,.18);
   border-radius: 22px;
   padding: 14px;
-  background: rgba(15,107,79,.06);
+  background: rgba(252,192,10,.06);
 }
 .question-group {
   border: 1px solid var(--line);
@@ -200,7 +207,7 @@ h3 { font-size: 1.1rem; }
   display: block;
   box-shadow: none;
 }
-.item:hover { border-color: rgba(15,107,79,.35); transform: translateY(-1px); }
+.item:hover { border-color: rgba(252,192,10,.35); transform: translateY(-1px); }
 .item:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .kv { display: flex; justify-content: space-between; gap: 18px; padding: 9px 0; border-bottom: 1px dashed var(--line); }
 .kv:last-child { border-bottom: 0; }
@@ -258,8 +265,10 @@ h3 { font-size: 1.1rem; }
   border: 1px solid var(--line);
   padding: 8px 12px;
 }
-.q-step.active { background: rgba(15,107,79,.1); border-color: rgba(15,107,79,.35); }
-.q-step .pts { color: var(--brand); }
+.q-step.active { background: rgba(252,192,10,.1); border-color: rgba(252,192,10,.35); }
+/* Pontos no stepper: amarelo brand em fundo branco tem contraste baixo;
+   uso o brand-2 (laranja) para garantir legibilidade. */
+.q-step .pts { color: var(--brand-2); }
 .q-section { margin-top: 12px; }
 .q-footer { margin-top: 14px; }
 .q-footer button { padding: 8px 12px; }
@@ -277,6 +286,51 @@ h3 { font-size: 1.1rem; }
 
 /* Acessibilidade */
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* ─── Impressao / Salvar como PDF ───────────────────────────────────────
+   Modo emergencial sem historico persistente: cada consulta vira um
+   "recibo" que o vendedor imprime/salva como PDF para arquivo pessoal.
+   Esconde sidebar, navegacao, botoes interativos e backgrounds; mantem
+   apenas o card alvo (.print-target) renderizado em layout sobrio. */
+@media print {
+  /* Fundo branco solido sem grid decorativo. */
+  html, body { background: white !important; color: #000 !important; }
+  body::before { display: none !important; }
+  /* Sidebar, nav, hero, botoes interativos somem. */
+  .side, .hero, .no-print, button:not(.no-print) { display: none !important; }
+  /* Layout do app vira coluna unica sem padding extra. */
+  .app { display: block !important; }
+  .main { padding: 0 !important; max-width: none !important; }
+  /* So o card alvo importa no PDF. queryForm (incluindo questionario) e
+     o painel de review (analista) sao removidos do output impresso. */
+  #queryForm, #reviewPanel, #view-history { display: none !important; }
+  /* Cards alvo perdem efeitos visuais p/ ficarem amigaveis no PDF. */
+  .print-target {
+    box-shadow: none !important;
+    background: white !important;
+    border: 1px solid #999 !important;
+    border-radius: 8px !important;
+    backdrop-filter: none !important;
+    page-break-inside: avoid;
+  }
+  /* Pills viram texto com borda fina (cor sem chamar atencao). */
+  .pill {
+    background: transparent !important;
+    border: 1px solid #555 !important;
+    color: #000 !important;
+  }
+  /* Cabecalho de impressao gerado via pseudo-elemento no .print-target. */
+  .print-target::before {
+    content: "Hub MakScore — Relatório de consulta";
+    display: block;
+    font-weight: 900;
+    border-bottom: 2px solid #000;
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+  }
+  /* Mantem .item legivel caso seja impresso por algum motivo. */
+  .item { background: white !important; }
+}
 
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
