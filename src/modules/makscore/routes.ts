@@ -35,7 +35,17 @@ const HistorySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
   offset: z.coerce.number().int().nonnegative().optional(),
   userId: z.string().max(128).optional(),
+  outcome: z.enum(["aprovado", "reprovado", "exige_analise", "indisponivel_temporariamente"]).optional(),
+  from: z.string().max(40).optional(), // ISO ou data; convertido p/ ms
+  to: z.string().max(40).optional(),
+  q: z.string().max(40).optional(),    // busca no CNPJ mascarado
 });
+
+function toMs(v: string | undefined): number | undefined {
+  if (!v) return undefined;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : undefined;
+}
 
 const ResultParamSchema = z.object({
   correlationId: z.string().uuid(),
@@ -195,8 +205,20 @@ export function buildMakScoreRouter(
     const offset = parse.data.offset ?? 0;
     // vendedor sempre restrito ao proprio id (ignora userId da query).
     const filterUserId = priv ? parse.data.userId : req.user!.id;
+    const filter = {
+      userId: filterUserId,
+      outcome: parse.data.outcome,
+      fromMs: toMs(parse.data.from),
+      toMs: toMs(parse.data.to),
+      q: parse.data.q,
+      limit,
+      offset,
+    };
     try {
-      const rows = await service.history({ userId: filterUserId, limit, offset });
+      const [rows, total] = await Promise.all([
+        service.history(filter),
+        service.countHistory(filter),
+      ]);
       // auditoria: privilegiado acessando dados gerais/de terceiros (sem CNPJ aberto).
       if (priv && filterUserId !== req.user!.id) {
         security.audit.write({
@@ -208,7 +230,13 @@ export function buildMakScoreRouter(
           details: { filterUserId: filterUserId ?? "all", count: rows.length },
         });
       }
-      res.json({ items: rows.map((p) => projectPersisted(p, security, role)) });
+      res.json({
+        items: rows.map((p) => projectPersisted(p, security, role)),
+        total,
+        limit,
+        offset,
+        hasMore: offset + rows.length < total,
+      });
     } catch {
       res.status(503).json({ error: "history_unavailable" });
     }

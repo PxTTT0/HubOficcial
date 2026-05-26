@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { onlyDigits } from "./cnpj";
 import type {
+  MakfilOutcome,
   MakScoreReviewEvent,
   PersistedMakScore,
   ReviewActionInput,
@@ -14,6 +15,11 @@ import type {
 export interface MakScoreHistoryFilter {
   // Quando definido, restringe ao usuario (vendedor ve so as proprias).
   userId?: string;
+  // Filtros opcionais.
+  outcome?: MakfilOutcome;
+  fromMs?: number; // createdAtMs >= fromMs
+  toMs?: number;   // createdAtMs <= toMs
+  q?: string;      // substring no cnpj mascarado
   limit: number;
   offset: number;
 }
@@ -23,6 +29,8 @@ export interface MakScoreRepository {
   save(record: PersistedMakScore): Promise<void>;
   findByCorrelationId(correlationId: string): Promise<PersistedMakScore | null>;
   listHistory(filter: MakScoreHistoryFilter): Promise<PersistedMakScore[]>;
+  /** Total de registros que casam o filtro (ignora limit/offset). */
+  countHistory(filter: MakScoreHistoryFilter): Promise<number>;
   /**
    * Aplica analise manual de forma ATOMICA: atualiza o estado atual da
    * review em makscore_results E insere o evento na trilha append-only,
@@ -69,14 +77,25 @@ export class InMemoryMakScoreRepository implements MakScoreRepository {
     return this.records.find((r) => r.correlationId === correlationId) ?? null;
   }
 
+  private filtered(filter: MakScoreHistoryFilter): PersistedMakScore[] {
+    let arr = this.records.slice();
+    if (filter.userId) arr = arr.filter((r) => r.context?.userId === filter.userId);
+    if (filter.outcome) arr = arr.filter((r) => r.outcome === filter.outcome);
+    if (filter.fromMs != null) arr = arr.filter((r) => r.createdAtMs >= filter.fromMs!);
+    if (filter.toMs != null) arr = arr.filter((r) => r.createdAtMs <= filter.toMs!);
+    if (filter.q) {
+      const q = filter.q.toLowerCase();
+      arr = arr.filter((r) => r.cnpj.toLowerCase().includes(q));
+    }
+    return arr.sort((a, b) => b.createdAtMs - a.createdAtMs);
+  }
+
   async listHistory(filter: MakScoreHistoryFilter): Promise<PersistedMakScore[]> {
-    const all = filter.userId
-      ? this.records.filter((r) => r.context?.userId === filter.userId)
-      : this.records;
-    return all
-      .slice()
-      .sort((a, b) => b.createdAtMs - a.createdAtMs)
-      .slice(filter.offset, filter.offset + filter.limit);
+    return this.filtered(filter).slice(filter.offset, filter.offset + filter.limit);
+  }
+
+  async countHistory(filter: MakScoreHistoryFilter): Promise<number> {
+    return this.filtered(filter).length;
   }
 
   async applyReview(input: ReviewActionInput): Promise<ReviewApplied | null> {

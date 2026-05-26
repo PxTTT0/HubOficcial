@@ -174,7 +174,46 @@
         </div>
         <button id="refreshHistory" class="ghost">Atualizar</button>
       </div>
+
+      <form id="historyFilters" class="filters mt-16">
+        <label class="field">
+          <span>Decisão</span>
+          <select id="filterOutcome">
+            <option value="">Todas</option>
+            <option value="aprovado">Aprovado</option>
+            <option value="reprovado">Reprovado</option>
+            <option value="exige_analise">Exige análise</option>
+            <option value="indisponivel_temporariamente">Indisponível</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>De</span>
+          <input id="filterFrom" type="date" />
+        </label>
+        <label class="field">
+          <span>Até</span>
+          <input id="filterTo" type="date" />
+        </label>
+        <label class="field">
+          <span>CNPJ</span>
+          <input id="filterQ" type="text" inputmode="numeric" maxlength="20" placeholder="Busca no CNPJ" />
+        </label>
+        <label class="field hide" id="filterUserIdField">
+          <span>Usuário</span>
+          <input id="filterUserId" type="text" maxlength="128" placeholder="ID do vendedor" />
+        </label>
+        <div class="field actions-row">
+          <button type="submit" class="primary">Filtrar</button>
+          <button type="button" id="clearFilters" class="ghost">Limpar</button>
+        </div>
+      </form>
+
       <div id="historyList" class="list mt-16"></div>
+
+      <div class="actions between mt-16">
+        <span id="historyCount" class="small muted"></span>
+        <button id="loadMoreHistory" class="ghost hide">Carregar mais</button>
+      </div>
     </section>
 
     <section id="view-detail" class="grid cols hide">

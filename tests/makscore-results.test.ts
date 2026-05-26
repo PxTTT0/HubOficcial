@@ -118,6 +118,45 @@ function suite(name: string, make: () => Promise<MakScoreRepository>) {
     assert.equal(all.length, 3);
   });
 
+  test(`${name}: historico filtra por outcome, intervalo de datas e q`, async () => {
+    const repo = await make();
+    const t0 = Date.now();
+    await repo.save(persisted({ correlationId: "ap", createdAtMs: t0 - 3000, outcome: "aprovado", cnpj: "11.***.***/****-81" }));
+    await repo.save(persisted({ correlationId: "rp", createdAtMs: t0 - 2000, outcome: "reprovado", cnpj: "22.***.***/****-99" }));
+    await repo.save(persisted({ correlationId: "ex", createdAtMs: t0 - 1000, outcome: "exige_analise", cnpj: "33.***.***/****-77" }));
+
+    // outcome
+    const rep = await repo.listHistory({ outcome: "reprovado", limit: 50, offset: 0 });
+    assert.deepEqual(rep.map((r) => r.correlationId), ["rp"]);
+    assert.equal(await repo.countHistory({ outcome: "reprovado", limit: 50, offset: 0 }), 1);
+
+    // intervalo de datas (fromMs/toMs inclusivos)
+    const range = await repo.listHistory({ fromMs: t0 - 2500, toMs: t0 - 1500, limit: 50, offset: 0 });
+    assert.deepEqual(range.map((r) => r.correlationId), ["rp"]);
+
+    // q: substring no cnpj mascarado (case-insensitive)
+    const q = await repo.listHistory({ q: "33.", limit: 50, offset: 0 });
+    assert.deepEqual(q.map((r) => r.correlationId), ["ex"]);
+    assert.equal(await repo.countHistory({ q: "33.", limit: 50, offset: 0 }), 1);
+  });
+
+  test(`${name}: paginacao (limit/offset) com countHistory total estavel`, async () => {
+    const repo = await make();
+    const t0 = Date.now();
+    for (let i = 0; i < 5; i++) {
+      await repo.save(persisted({ correlationId: `p${i}`, createdAtMs: t0 + i, context: { userId: "u1" } }));
+    }
+    const total = await repo.countHistory({ userId: "u1", limit: 2, offset: 0 });
+    assert.equal(total, 5, "count ignora limit/offset");
+    // ordem desc por createdAtMs: p4,p3,p2,p1,p0
+    const page1 = await repo.listHistory({ userId: "u1", limit: 2, offset: 0 });
+    assert.deepEqual(page1.map((r) => r.correlationId), ["p4", "p3"]);
+    const page2 = await repo.listHistory({ userId: "u1", limit: 2, offset: 2 });
+    assert.deepEqual(page2.map((r) => r.correlationId), ["p2", "p1"]);
+    const page3 = await repo.listHistory({ userId: "u1", limit: 2, offset: 4 });
+    assert.deepEqual(page3.map((r) => r.correlationId), ["p0"]);
+  });
+
   test(`${name}: nunca persiste CNPJ aberto nem payload bruto`, async () => {
     const repo = await make();
     await repo.save(persisted({ correlationId: "leak-check" }));

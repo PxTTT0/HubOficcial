@@ -125,6 +125,16 @@ h3 { font-size: 1.1rem; }
 .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .row.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.filters .field { margin: 0; display: grid; gap: 6px; }
+.filters .field > span { color: var(--muted); font-size: .82rem; font-weight: 700; }
+.filters .actions-row { display: flex; gap: 8px; align-items: end; }
+.filters .actions-row button { width: auto; }
 .pill {
   display: inline-flex; align-items: center; gap: 6px;
   border-radius: 999px;
