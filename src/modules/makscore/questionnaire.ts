@@ -201,6 +201,153 @@ export function getQuestionnaireSchema(): QuestionnaireSchema {
   };
 }
 
+// ─── Pre-preenchimento a partir da E-POSI ─────────────────────────────
+// Mapeia campos do E-POSI normalizado para sugestoes no questionario.
+// O vendedor SEMPRE pode revisar/desmarcar -- o backend usa as respostas
+// finais do request /query, nao essas sugestoes. Apenas o front exibe e
+// permite editar.
+//
+// IMPORTANTE: nao usa MakScoreConfig direto para evitar dependencia
+// circular questionnaire <-> config; recebe o threshold como parametro.
+export type QuestionnaireSuggestionGroup =
+  | "bloqueios"
+  | "pilares"
+  | "agravantes"
+  | "mitigadores";
+
+export interface QuestionnaireSuggestionSource {
+  group: QuestionnaireSuggestionGroup;
+  key: string;
+  /** Texto curto que o front mostra como tooltip / explicacao da sugestao. */
+  reason: string;
+}
+
+export interface QuestionnaireSuggestion {
+  answers: {
+    bloqueios?: Record<string, boolean>;
+    pilares?: Record<string, boolean>;
+    agravantes?: Record<string, boolean>;
+    mitigadores?: Record<string, boolean>;
+  };
+  sources: QuestionnaireSuggestionSource[];
+}
+
+interface PrefillInput {
+  cadastralStatus: string;
+  dataAbertura: string | null;
+  score: number | null;
+  hasProtesto: boolean;
+  hasNegativacao: boolean;
+}
+
+const IRREGULAR_STATUSES = new Set(["inapta", "baixada", "suspensa", "nula"]);
+
+function ageInMonths(dataAbertura: string | null): number | null {
+  if (!dataAbertura) return null;
+  const d = new Date(dataAbertura);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  const months =
+    (now.getFullYear() - d.getFullYear()) * 12 +
+    (now.getMonth() - d.getMonth());
+  return months >= 0 ? months : null;
+}
+
+/**
+ * Sugere marcacoes do questionario a partir do E-POSI normalizado.
+ * NUNCA decide nada -- so prepara o terreno para o vendedor revisar.
+ *
+ * Mapeamentos atuais (extensiveis):
+ *  - cadastralStatus irregular  -> bloqueio "bl_cnpj_inapto"
+ *  - empresa < 12 meses          -> bloqueio "bl_menos_12m"
+ *  - empresa >= 12 meses         -> pilar A "a_abertura_12m"
+ *  - cadastralStatus === "ativa" -> pilar A "a_situacao_regular"
+ *  - sem protesto                -> pilar B "b_sem_protesto"
+ *  - score >= approveMinScore    -> pilar C "c_score_minimo"
+ *  - tem protesto                -> agravante "ag_protesto_alto" (confirmar valor)
+ */
+export function suggestQuestionnaireFromEposi(
+  input: PrefillInput,
+  approveMinScore: number,
+): QuestionnaireSuggestion {
+  const sources: QuestionnaireSuggestionSource[] = [];
+  const bloqueios: Record<string, boolean> = {};
+  const pilares: Record<string, boolean> = {};
+  const agravantes: Record<string, boolean> = {};
+
+  if (IRREGULAR_STATUSES.has(input.cadastralStatus)) {
+    bloqueios.bl_cnpj_inapto = true;
+    sources.push({
+      group: "bloqueios",
+      key: "bl_cnpj_inapto",
+      reason: `E-POSI: situação cadastral "${input.cadastralStatus}".`,
+    });
+  }
+
+  const months = ageInMonths(input.dataAbertura);
+  if (months !== null) {
+    if (months < 12) {
+      bloqueios.bl_menos_12m = true;
+      sources.push({
+        group: "bloqueios",
+        key: "bl_menos_12m",
+        reason: `E-POSI: empresa com ${months} meses (limite Makfil: 12).`,
+      });
+    } else {
+      pilares.a_abertura_12m = true;
+      sources.push({
+        group: "pilares",
+        key: "a_abertura_12m",
+        reason: `E-POSI: abertura há ${months} meses (>= 12).`,
+      });
+    }
+  }
+
+  if (input.cadastralStatus === "ativa") {
+    pilares.a_situacao_regular = true;
+    sources.push({
+      group: "pilares",
+      key: "a_situacao_regular",
+      reason: "E-POSI: situação cadastral ativa.",
+    });
+  }
+
+  if (!input.hasProtesto) {
+    pilares.b_sem_protesto = true;
+    sources.push({
+      group: "pilares",
+      key: "b_sem_protesto",
+      reason: "E-POSI: nenhum protesto identificado.",
+    });
+  }
+
+  if (input.score !== null && input.score >= approveMinScore) {
+    pilares.c_score_minimo = true;
+    sources.push({
+      group: "pilares",
+      key: "c_score_minimo",
+      reason: `E-POSI: score ${input.score} >= mínimo Makfil (${approveMinScore}).`,
+    });
+  }
+
+  if (input.hasProtesto) {
+    agravantes.ag_protesto_alto = true;
+    sources.push({
+      group: "agravantes",
+      key: "ag_protesto_alto",
+      reason: "E-POSI: protesto identificado (confirmar se >R$10 mil).",
+    });
+  }
+
+  // Mantém apenas grupos com pelo menos um item para resposta mais limpa.
+  const answers: QuestionnaireSuggestion["answers"] = {};
+  if (Object.keys(bloqueios).length) answers.bloqueios = bloqueios;
+  if (Object.keys(pilares).length) answers.pilares = pilares;
+  if (Object.keys(agravantes).length) answers.agravantes = agravantes;
+
+  return { answers, sources };
+}
+
 export function scoreQuestionnaire(
   answers: MakScoreQuestionnaireAnswers,
 ): MakScoreQuestionnaireScore {

@@ -141,6 +141,34 @@ test("Tema Makfil amarelo (#FCC00A) + recibo imprimivel + sem nav de historico",
   }
 });
 
+test("Pre-preench do questionario: snapshot + listener no blur + badge auto", { concurrency: false }, async () => {
+  const snap = snapshot();
+  const server = await startServer();
+  try {
+    const html = await (await fetch(`${server.base}/makscore/`)).text();
+    // Snapshot e status do prefill expostos no DOM (aria-live).
+    assert.match(html, /id=["']prefillStatus["']/);
+    assert.match(html, /id=["']prefillSnapshot["']/);
+
+    const js = await (await fetch(`${server.base}/makscore/app.js`)).text();
+    // Funcao de prefill e helper de aplicacao das sugestoes presentes.
+    assert.match(js, /async function prefillFromCnpj/);
+    assert.match(js, /function applyPrefillToQuestionnaire/);
+    // Listener de blur no campo CNPJ (auto-prefill).
+    assert.match(js, /\$\(["']cnpj["']\)\.addEventListener\(["']blur["']/);
+    // Endpoint correto e CSP-safe (mesma origem).
+    assert.match(js, /\/api\/makscore\/prefill/);
+
+    const css = await (await fetch(`${server.base}/makscore/app.css`)).text();
+    // Badge visual "auto" no item sugerido (via data-suggested).
+    assert.match(css, /\.check\[data-suggested=/);
+    assert.match(css, /\.prefill-snapshot/);
+  } finally {
+    restore(snap);
+    await server.close();
+  }
+});
+
 test("index.html nao tem JS/CSS inline nem style= (compativel com CSP estrita)", { concurrency: false }, async () => {
   const snap = snapshot();
   const server = await startServer();

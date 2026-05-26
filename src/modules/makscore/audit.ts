@@ -10,7 +10,11 @@ export interface AuditEvent {
     | "query.external_fail"
     | "query.decision"
     | "query.rate_limited"
-    | "query.invalid_input";
+    | "query.invalid_input"
+    | "prefill.start"
+    | "prefill.ok"
+    | "prefill.fail"
+    | "prefill.invalid_input";
   correlationId: string;
   cnpjMasked: string;
   product?: EposiProduct;

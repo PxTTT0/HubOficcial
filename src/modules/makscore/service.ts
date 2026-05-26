@@ -4,7 +4,11 @@ import type { EposiProduct, MakScoreConfig } from "./config";
 import type { EposiClient } from "./eposiClient";
 import { normalizeEposi } from "./normalizer";
 import { applyMakfilPolicy } from "./policy";
-import { scoreQuestionnaire } from "./questionnaire";
+import {
+  scoreQuestionnaire,
+  suggestQuestionnaireFromEposi,
+  type QuestionnaireSuggestion,
+} from "./questionnaire";
 import {
   hashCnpj,
   type MakScoreHistoryFilter,
@@ -42,6 +46,29 @@ export interface QueryInput {
   product?: EposiProduct;
   context?: MakScoreContext;
   forceRefresh?: boolean;
+}
+
+export interface PrefillInput {
+  cnpj: string;
+  product?: EposiProduct;
+  userId?: string;
+}
+
+/**
+ * Resultado do prefill. NAO contem decisao -- apenas o snapshot
+ * cadastral/score do E-POSI + sugestoes para o questionario do front.
+ * NUNCA persiste e NUNCA passa pelo decision engine.
+ */
+export interface PrefillResult {
+  cadastralStatus: string;
+  razaoSocial: string | null;
+  cnaePrincipal: string | null;
+  dataAbertura: string | null;
+  score: number | null;
+  hasNegativacao: boolean;
+  hasProtesto: boolean;
+  sourceIsMock: boolean;
+  suggestion: QuestionnaireSuggestion;
 }
 
 export class MakScoreInputError extends Error {
@@ -95,6 +122,92 @@ export class MakScoreService {
     void this.audit.write(ev).catch(() => {
       /* engolido: PgMakScoreAuditSink ja loga com throttle */
     });
+  }
+
+  /**
+   * Consulta E-POSI sem decidir, sem persistir. Usado pelo front para
+   * pre-preencher o questionario assim que o vendedor termina de
+   * digitar o CNPJ. Decisao oficial sai apenas em `query()` com o
+   * questionario completo.
+   */
+  async prefill(input: PrefillInput): Promise<PrefillResult> {
+    const correlationId = randomUUID();
+    const cnpj = onlyDigits(input.cnpj);
+    const product = input.product ?? this.cfg.defaultProduct;
+
+    if (!isValidCnpj(cnpj)) {
+      this.emitAudit(
+        makeAuditEvent({
+          type: "prefill.invalid_input",
+          correlationId,
+          cnpj,
+          userId: input.userId,
+          message: "CNPJ invalido",
+        }),
+      );
+      throw new MakScoreInputError("cnpj_invalido", "CNPJ invalido");
+    }
+
+    this.emitAudit(
+      makeAuditEvent({
+        type: "prefill.start",
+        correlationId,
+        cnpj,
+        product,
+        userId: input.userId,
+      }),
+    );
+
+    let raw;
+    try {
+      raw = await this.client.query(cnpj, product);
+    } catch (err: any) {
+      this.emitAudit(
+        makeAuditEvent({
+          type: "prefill.fail",
+          correlationId,
+          cnpj,
+          product,
+          userId: input.userId,
+          message: String(err?.message ?? err),
+        }),
+      );
+      throw err;
+    }
+    const normalized = normalizeEposi(raw, product);
+    const suggestion = suggestQuestionnaireFromEposi(
+      {
+        cadastralStatus: normalized.cadastralStatus,
+        dataAbertura: normalized.dataAbertura,
+        score: normalized.score,
+        hasProtesto: normalized.hasProtesto,
+        hasNegativacao: normalized.hasNegativacao,
+      },
+      this.cfg.approveMinScore,
+    );
+
+    this.emitAudit(
+      makeAuditEvent({
+        type: "prefill.ok",
+        correlationId,
+        cnpj,
+        product,
+        sourceIsMock: normalized.sourceIsMock,
+        userId: input.userId,
+      }),
+    );
+
+    return {
+      cadastralStatus: normalized.cadastralStatus,
+      razaoSocial: normalized.razaoSocial,
+      cnaePrincipal: normalized.cnaePrincipal,
+      dataAbertura: normalized.dataAbertura,
+      score: normalized.score,
+      hasNegativacao: normalized.hasNegativacao,
+      hasProtesto: normalized.hasProtesto,
+      sourceIsMock: normalized.sourceIsMock,
+      suggestion,
+    };
   }
 
   async query(input: QueryInput): Promise<MakScoreQueryResult> {
